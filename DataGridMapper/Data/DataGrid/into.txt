@@ -1,0 +1,1009 @@
+﻿
+Zaloguj się
+Zarejestruj się za darmo
+Powiedziałeś(-aś):
+
+using System;
+using System.Collections.Generic;
+using System.ComponentModel;
+using System.Drawing;
+using System.Globalization;
+using System.Linq;
+using System.Windows.Forms;
+
+namespace MC.Data.DataGrid
+{
+    public class GridFilter
+    {
+        public int FilterPanelHeight { get; set; } = 30;
+
+        private sealed class FilterContext
+        {
+            public DataGridView Grid { get; set; }
+
+            public BindingSource Source { get; set; }
+
+            public object OriginalDataSource { get; set; }
+
+            public bool OwnsBindingSource { get; set; }
+
+            public Panel FilterPanel { get; set; }
+
+            public Dictionary<string, Control> Controls { get; } =
+                new Dictionary<string, Control>(
+                    StringComparer.OrdinalIgnoreCase);
+
+            public Dictionary<string, string> Values { get; } =
+                new Dictionary<string, string>(
+                    StringComparer.OrdinalIgnoreCase);
+        }
+
+        private FilterContext _context;
+        private readonly DataGridView grid;
+
+        public GridFilter(DataGridView grid)
+        {
+            this.grid = grid;
+        }
+
+        public bool Enable()
+        {
+            if (grid == null)
+                throw new ArgumentNullException(nameof(grid));
+
+            if (_context != null)
+                return true;
+
+            object originalDataSource;
+            bool ownsBindingSource;
+
+            BindingSource source =
+                GetOrCreateBindingSource(
+                    grid,
+                    out originalDataSource,
+                    out ownsBindingSource);
+
+            if (source == null)
+            {
+                MessageBox.Show(
+                    "DataGridView nie posiada źródła danych.",
+                    "GridFilter",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning);
+
+                return false;
+            }
+
+            try
+            {
+                FilterContext context = new FilterContext
+                {
+                    Grid = grid,
+                    Source = source,
+                    OriginalDataSource = originalDataSource,
+                    OwnsBindingSource = ownsBindingSource
+                };
+
+                CreateFilterPanel(context);
+
+                _context = context;
+
+                AttachEvents(context);
+
+                RefreshFilterControls(context);
+
+                return true;
+            }
+            catch (Exception ex)
+            {
+                // Jeżeli utworzyliśmy BindingSource,
+                // przywracamy oryginalny DataSource.
+                if (ownsBindingSource)
+                    grid.DataSource = originalDataSource;
+
+                System.Diagnostics.Debug.WriteLine(ex);
+
+                MessageBox.Show(
+                    "Nie udało się uruchomić filtrowania.\r\n\r\n" +
+                    ex.Message,
+                    "GridFilter",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Error);
+
+                return false;
+            }
+        }
+
+        public void Disable()
+        {
+            if (grid == null || _context == null)
+                return;
+
+            FilterContext context = _context;
+
+            DetachEvents(context);
+
+            if (context.FilterPanel != null)
+            {
+                Control parent = context.FilterPanel.Parent;
+
+                if (parent != null)
+                    parent.Controls.Remove(context.FilterPanel);
+
+                context.FilterPanel.Dispose();
+            }
+
+            // Przywracamy oryginalny DataSource.
+            grid.DataSource = context.OriginalDataSource;
+
+            _context = null;
+        }
+
+        private BindingSource GetOrCreateBindingSource(
+                    DataGridView grid,
+                    out object originalDataSource,
+                    out bool ownsBindingSource)
+        {
+            originalDataSource = grid.DataSource;
+            ownsBindingSource = false;
+
+            if (originalDataSource == null)
+                return null;
+
+            BindingSource existing =
+                originalDataSource as BindingSource;
+
+            if (existing != null)
+                return existing;
+
+            BindingSource source = new BindingSource
+            {
+                DataSource = originalDataSource
+            };
+
+            grid.DataSource = source;
+
+            ownsBindingSource = true;
+
+            return source;
+        }
+
+        private void CreateFilterPanel(
+            FilterContext context)
+        {
+            DataGridView grid = context.Grid;
+
+            if (grid.Parent == null)
+                throw new InvalidOperationException(
+                    "DataGridView musi posiadać Parent.");
+
+            Panel panel = new Panel
+            {
+                Height = FilterPanelHeight,
+                BackColor = SystemColors.Control,
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            Control parent = grid.Parent;
+
+            parent.Controls.Add(panel);
+
+            panel.Dock = DockStyle.Top;
+
+            // Grid powinien pozostać pod panelem.
+            grid.BringToFront();
+
+            // Panel ponownie na wierzch.
+            panel.BringToFront();
+
+            context.FilterPanel = panel;
+
+            CreateControls(context);
+        }
+
+        private void CreateControls(
+            FilterContext context)
+        {
+            DataGridView grid = context.Grid;
+            Panel panel = context.FilterPanel;
+
+            foreach (DataGridViewColumn column in grid.Columns)
+            {
+                if (!column.Visible)
+                    continue;
+
+                if (string.IsNullOrWhiteSpace(
+                    column.DataPropertyName))
+                    continue;
+
+                Control filterControl =
+                    CreateFilterControl(
+                        context.Source,
+                        column.DataPropertyName);
+
+                if (filterControl == null)
+                    continue;
+
+                filterControl.Tag =
+                    column.DataPropertyName;
+
+                panel.Controls.Add(filterControl);
+
+                context.Controls.Add(
+                    column.DataPropertyName,
+                    filterControl);
+            }
+
+            UpdateFilterControlBounds(context);
+        }
+
+        private Control CreateFilterControl(
+            BindingSource source,
+            string propertyName)
+        {
+            PropertyDescriptor property =
+                GetPropertyDescriptor(
+                    source,
+                    propertyName);
+
+            if (property == null)
+                return null;
+
+            Type type = Nullable.GetUnderlyingType(
+                property.PropertyType)
+                ?? property.PropertyType;
+
+            if (type == typeof(bool))
+            {
+                ComboBox comboBox = new ComboBox
+                {
+                    DropDownStyle =
+                        ComboBoxStyle.DropDownList
+                };
+
+                comboBox.Items.Add("Wszystkie");
+                comboBox.Items.Add("Tak");
+                comboBox.Items.Add("Nie");
+
+                comboBox.SelectedIndex = 0;
+
+                comboBox.SelectedIndexChanged +=
+                    FilterControlChanged;
+
+                return comboBox;
+            }
+
+            TextBox textBox = new TextBox
+            {
+                BorderStyle = BorderStyle.FixedSingle
+            };
+
+            textBox.TextChanged +=
+                FilterControlChanged;
+
+            return textBox;
+        }
+
+        private PropertyDescriptor GetPropertyDescriptor(
+            BindingSource source,
+            string propertyName)
+        {
+            if (source == null)
+                return null;
+
+            PropertyDescriptorCollection properties =
+                source.GetItemProperties(null);
+
+            if (properties == null)
+                return null;
+
+            return properties.Find(
+                propertyName,
+                true);
+        }
+
+        private void FilterControlChanged(
+            object sender,
+            EventArgs e)
+        {
+            Control control = sender as Control;
+
+            if (control == null)
+                return;
+
+            var context = _context;
+
+            var dreg = new Dictionary<string, Control>();
+            dreg.Add(control.Tag.ToString(), control);
+            DataGridView grid = _context.Grid;
+
+            if (grid == null)
+                return;
+
+            string propertyName =
+                control.Tag as string;
+
+            if (string.IsNullOrWhiteSpace(propertyName))
+                return;
+
+            string value = GetFilterValue(control);
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                context.Values.Remove(propertyName);
+            }
+            else
+            {
+                context.Values[propertyName] = value;
+            }
+
+            ApplyFilter(context);
+        }
+
+        private string GetFilterValue(
+            Control control)
+        {
+            if (control is TextBox textBox)
+                return textBox.Text.Trim();
+
+            if (control is ComboBox comboBox)
+            {
+                if (comboBox.SelectedIndex <= 0)
+                    return string.Empty;
+
+                return comboBox.SelectedIndex == 1
+                    ? "true"
+                    : "false";
+            }
+
+            return string.Empty;
+        }
+
+        private void ApplyFilter2(FilterContext context)
+        {
+            // 1. Zwięzłe i nowoczesne Guard Clauses
+            if (context?.Source == null || context.OriginalDataSource == null)
+                return;
+
+            if (!(context.OriginalDataSource is  System.Collections.IEnumerable))
+                return;
+
+            var source = context.OriginalDataSource as System.Collections.IEnumerable;
+
+            // 2. Unikamy wczesnego .ToList() - operujemy na IEnumerable
+            IEnumerable<object> result = source.Cast<object>();
+
+            // 3. Przygotowanie filtrów przed uruchomieniem LINQ (naprawa problemu domknięć)
+            var activeFilters = new List<(PropertyDescriptor Property, string Value)>();
+
+            foreach (KeyValuePair<string, string> filter in context.Values)
+            {
+                if (string.IsNullOrWhiteSpace(filter.Value))
+                    continue;
+
+                PropertyDescriptor property = GetPropertyDescriptor(context.Source, filter.Key);
+                if (property == null)
+                    continue;
+
+                activeFilters.Add((property, filter.Value));
+            }
+
+            // Jeśli nie ma aktywnych filtrów, możemy przepisać oryginalną listę lub wyczyścić
+            if (activeFilters.Count > 0)
+            {
+                // 4. Jedno, czyste i bezpieczne wywołanie Where
+                result = result.Where(item =>
+                {
+                    if (item == null) return false;
+
+                    // Element musi spełniać WSZYSTKIE aktywne filtry (AND)
+                    foreach (var (property, filterValue) in activeFilters)
+                    {
+                        object value = property.GetValue(item);
+                        if (value == null)
+                            return false;
+
+                        string text = Convert.ToString(value, CultureInfo.CurrentCulture);
+
+                        bool isMatch = text.IndexOf(
+                            filterValue,
+                            StringComparison.CurrentCultureIgnoreCase) >= 0;
+
+                        if (!isMatch)
+                            return false; // Skrajne odrzucenie (Fast-fail)
+                    }
+
+                    return true;
+                });
+            }
+
+            // 5. Dopiero tutaj materializujemy przefiltrowane wyniki (tylko raz!)
+            List<object> filtered = result.ToList();
+
+            context.Source.DataSource = filtered;
+            context.Source.ResetBindings(false);
+        }
+
+
+        private void ApplyFilter(
+                FilterContext context)
+        {
+            if (context == null)
+                return;
+
+            if (context.Source == null)
+                return;
+
+            if (context.OriginalDataSource == null)
+                return;
+
+            if (!(context.OriginalDataSource is System.Collections.IEnumerable source))
+                return;
+
+            List<object> items =
+                source.Cast<object>().ToList();
+
+            IEnumerable<object> result = items;
+
+            foreach (KeyValuePair<string, string> filter
+                in context.Values)
+            {
+                string propertyName = filter.Key;
+                string filterValue = filter.Value;
+
+                if (string.IsNullOrWhiteSpace(filterValue))
+                    continue;
+
+                PropertyDescriptor property =
+                    GetPropertyDescriptor(
+                        context.Source,
+                        propertyName);
+
+                if (property == null)
+                    continue;
+
+                result = result.Where(item =>
+                {
+                    object value =
+                        property.GetValue(item);
+
+                    if (value == null)
+                        return false;
+
+                    string text =
+                        Convert.ToString(
+                            value,
+                            CultureInfo.CurrentCulture);
+
+                    return text.IndexOf(
+                        filterValue,
+                        StringComparison.CurrentCultureIgnoreCase) >= 0;
+                });
+            }
+
+            List<object> filtered =
+                result.ToList();
+
+            context.Source.DataSource = filtered;
+
+            context.Source.ResetBindings(false);
+        }
+
+        private void UpdateFilterControlBounds(
+            FilterContext context)
+        {
+            DataGridView grid = context.Grid;
+            Panel panel = context.FilterPanel;
+
+            foreach (DataGridViewColumn column in grid.Columns)
+            {
+                if (!column.Visible)
+                    continue;
+
+                if (!context.Controls.TryGetValue(
+                    column.DataPropertyName,
+                    out Control control))
+                    continue;
+
+                Rectangle rectangle =
+                    grid.GetColumnDisplayRectangle(
+                        column.Index,
+                        true);
+
+                control.SetBounds(
+                    rectangle.X,
+                    3,
+                    Math.Max(0, rectangle.Width - 1),
+                    panel.Height - 6);
+            }
+        }
+
+        private void RefreshFilterControls(
+            FilterContext context)
+        {
+            UpdateFilterControlBounds(context);
+        }
+
+        private void AttachEvents(
+            FilterContext context)
+        {
+            DataGridView grid = context.Grid;
+
+            grid.Scroll += Grid_Scroll;
+            grid.ColumnWidthChanged += Grid_ColumnWidthChanged;
+            grid.ColumnDisplayIndexChanged +=
+                Grid_ColumnDisplayIndexChanged;
+            grid.Resize += Grid_Resize;
+        }
+
+        private void DetachEvents(
+            FilterContext context)
+        {
+            DataGridView grid = context.Grid;
+
+            grid.Scroll -= Grid_Scroll;
+            grid.ColumnWidthChanged -=
+                Grid_ColumnWidthChanged;
+            grid.ColumnDisplayIndexChanged -=
+                Grid_ColumnDisplayIndexChanged;
+            grid.Resize -= Grid_Resize;
+        }
+
+        private void Grid_Scroll(
+            object sender,
+            ScrollEventArgs e)
+        {
+            if (_context?.Grid != null)
+                UpdateFilterControlBounds(_context);
+        }
+
+        private void Grid_ColumnWidthChanged(
+            object sender,
+            DataGridViewColumnEventArgs e)
+        {
+            if (sender is DataGridView grid &&
+                _context!=null)
+            {
+                UpdateFilterControlBounds(_context);
+            }
+        }
+
+        private void Grid_ColumnDisplayIndexChanged(
+            object sender,
+            DataGridViewColumnEventArgs e)
+        {
+            if (sender is DataGridView grid &&
+                _context!=null)
+            {
+                UpdateFilterControlBounds(_context);
+            }
+        }
+
+        private void Grid_Resize(
+            object sender,
+            EventArgs e)
+        {
+            if (sender is DataGridView grid &&
+                _context!=null)
+            {
+                UpdateFilterControlBounds(_context);
+            }
+        }
+    }
+}
+prznaluj i oceń
+
+ChatGPT powiedział:
+Tak — przeanalizowałem całość. Pomysł jest sensowny, ale obecna implementacja ma kilka poważnych problemów architektonicznych, przede wszystkim związanych z BindingSource.DataSource, filtrowaniem kolejnych razy oraz synchronizacją panelu z gridem.
+
+Ocena
+Dałbym obecnie około 6/10.
+
+Obszar	Ocena	Uwagi
+Czytelność	7/10	Kod jest dość łatwy do śledzenia
+Organizacja	7/10	FilterContext to dobry kierunek
+UI	7/10	Panel nad gridem + synchronizacja kolumn jest sensowna
+Filtrowanie	5/10	Działa dla prostych przypadków, ale ma istotne pułapki
+BindingSource	4/10	Tutaj jest największy problem
+Wydajność	5/10	Przy większych tabelach będzie niepotrzebnie dużo pracy
+Rozszerzalność	6/10	Da się rozwijać, ale warto zmienić fundament
+
+1. Największy problem: OriginalDataSource
+Masz:
+
+BindingSource source = new BindingSource
+{
+    DataSource = originalDataSource
+};
+
+grid.DataSource = source;
+
+a później:
+
+context.Source.DataSource = filtered;
+
+To jest problem.
+
+Załóżmy, że początkowo:
+
+grid
+  ↓
+BindingSource
+  ↓
+List<Customer>  ← oryginał
+
+Po filtrowaniu robisz:
+
+grid
+  ↓
+BindingSource
+  ↓
+List<object>    ← wynik filtra
+
+ale OriginalDataSource nadal wskazuje na oryginalną listę.
+
+Przy następnym filtrowaniu zaczynasz więc znowu od:
+
+context.OriginalDataSource
+
+czyli od pełnego zbioru.
+
+To oznacza, że obecne filtrowanie jest rekalkulowane od zera przy każdej zmianie pola.
+
+Samo w sobie nie musi być błędem — wręcz jest to dobre dla filtrów typu AND — ale zmiana BindingSource.DataSource na List<object> jest niepotrzebna i może powodować problemy z bindingiem.
+
+2. List<object> jest tutaj szczególnie niekorzystne
+Masz:
+
+List<object> filtered = result.ToList();
+
+context.Source.DataSource = filtered;
+
+Jeśli oryginalnie grid był związany np. z:
+
+List<Customer>
+
+to po filtrowaniu staje się związany z:
+
+List<object>
+
+To może mieć konsekwencje dla:
+
+sortowania,
+
+edycji,
+
+CurrencyManager,
+
+właściwości DataGridView,
+
+powiązanych kontrolek,
+
+dodawania/usuwania rekordów,
+
+BindingSource i jego eventów.
+
+Nie zmieniałbym typu źródła danych przy filtrowaniu.
+
+3. Masz martwy kod ApplyFilter2
+Masz dwie implementacje:
+
+private void ApplyFilter2(FilterContext context)
+
+oraz:
+
+private void ApplyFilter(FilterContext context)
+
+ApplyFilter2() nigdzie nie jest wywoływane.
+
+Usunąłbym ją.
+
+Co więcej, ApplyFilter2() jest w kilku miejscach lepiej napisana:
+
+var activeFilters = new List<(PropertyDescriptor Property, string Value)>();
+
+i później:
+
+foreach (var (property, filterValue) in activeFilters)
+
+To eliminuje ponowne wyszukiwanie właściwości w każdym predykacie.
+
+4. Jest kompletnie zbędny kod
+W FilterControlChanged():
+
+var dreg = new Dictionary<string, Control>();
+dreg.Add(control.Tag.ToString(), control);
+
+To niczego nie robi.
+
+Zmienna dreg jest natychmiast porzucana.
+
+Usunąć.
+
+5. Te grid są nieużywane
+Np.:
+
+if (sender is DataGridView grid &&
+    _context != null)
+{
+    UpdateFilterControlBounds(_context);
+}
+
+grid nie jest później używany.
+
+Powinno być po prostu:
+
+if (_context != null)
+    UpdateFilterControlBounds(_context);
+
+To samo masz w kilku eventach.
+
+6. Duży problem z DataPropertyName
+Tworzysz kontrolki na podstawie:
+
+column.DataPropertyName
+
+i przechowujesz je w:
+
+Dictionary<string, Control>
+
+To jest OK, jeśli DataPropertyName jest unikalne.
+
+Ale później:
+
+context.Controls.Add(
+    column.DataPropertyName,
+    filterControl);
+
+może rzucić:
+
+ArgumentException: An item with the same key has already been added.
+
+W praktyce dwie kolumny mogą wskazywać tę samą właściwość.
+
+Bezpieczniej byłoby identyfikować kontrolki po DataGridViewColumn/indeksie albo świadomie obsłużyć duplikaty.
+
+7. Filtrowanie bool jest zbyt przypadkowe
+Masz:
+
+comboBox.Items.Add("Wszystkie");
+comboBox.Items.Add("Tak");
+comboBox.Items.Add("Nie");
+
+a potem:
+
+return comboBox.SelectedIndex == 1
+    ? "true"
+    : "false";
+
+Następnie wszystko jest traktowane jako tekst:
+
+string text = Convert.ToString(
+    value,
+    CultureInfo.CurrentCulture);
+
+i:
+
+text.IndexOf(
+    filterValue,
+    StringComparison.CurrentCultureIgnoreCase) >= 0
+
+Czyli bool jest filtrowany przez reprezentację tekstową.
+
+To działa przypadkiem dla:
+
+true / false
+
+ale jest to zła abstrakcja.
+
+Lepiej, żeby filtr przechowywał wartość właściwego typu, np.:
+
+bool?
+
+zamiast:
+
+"true"
+"false"
+
+8. Jeszcze większy problem: liczby i daty
+Obecnie:
+
+TextBox
+
+jest używany dla:
+
+int
+
+decimal
+
+double
+
+DateTime
+
+Guid
+
+enum
+
+itd.
+
+i wszystko sprowadzasz do:
+
+Convert.ToString(...)
+
+To oznacza, że:
+
+123
+
+jest traktowane tak samo jak tekst.
+
+Dla prostego "contains" jest to OK, ale użytkownik prawdopodobnie oczekuje innych zachowań:
+
+> 100
+< 500
+= 123
+2026-01-01
+
+Jeżeli chcesz tylko prosty tekstowy filtr — w porządku.
+
+Jeżeli ma to być uniwersalny GridFilter, warto zaprojektować operator + wartość.
+
+9. Największy problem wydajnościowy
+Za każdym:
+
+TextChanged
+
+wykonujesz cały filtr.
+
+Czyli użytkownik wpisuje:
+
+K
+Ka
+Kat
+Kato
+Kato w
+
+i dostajesz pięć pełnych przebiegów po danych.
+
+Przy:
+
+10 000 rekordów
+
+jest to jeszcze do przeżycia.
+
+Przy:
+
+100 000+
+
+może już być bardzo odczuwalne.
+
+Dodałbym debounce, np. Timer:
+
+TextChanged
+   ↓
+Timer 200-300 ms
+   ↓
+ApplyFilter()
+
+--------------
+0. PropertyDescriptor.GetValue() dla każdego rekordu
+Masz:
+
+object value = property.GetValue(item);
+
+dla każdego elementu i każdego filtra.
+
+To jest wygodne, ale refleksja/PropertyDescriptor ma koszt.
+
+Można przygotować predykaty raz:
+
+List<Func<object, bool>>
+
+albo cache'ować informacje o właściwościach.
+
+Ale na tym etapie nie optymalizowałbym tego przed pomiarem.
+
+Dużo większy efekt da debounce i ograniczenie niepotrzebnego rebindowania
+------------------
+1. Panel nad gridem — dobry pomysł, ale jest jedna pułapka
+To:
+
+parent.Controls.Add(panel);
+panel.Dock = DockStyle.Top;
+
+grid.BringToFront();
+panel.BringToFront();
+
+jest trochę kruche.
+
+Panel i DataGridView są rodzeństwem w tym samym Parent.
+
+Jeżeli Parent zmieni layout, kolejność Controls, docking albo inny komponent zmieni Z-order, mogą pojawić się niespodzianki.
+
+Lepszym rozwiązaniem byłoby opakowanie:
+
+FilterContainer
+├── FilterPanel
+└── DataGridView
+
+czyli:
+
+Panel
+ ├── Panel filtrów
+ └── DataGridView
+
+Wtedy layout jest deterministyczny.
+
+
+FilterDefinition
+       │
+       ▼
+Expression<Func<T,bool>>
+       │
+       ├───────────────┐
+       ▼               ▼
+ IQueryable         IEnumerable
+       │               │
+ Where(expression)   Compile()
+       │               │
+ SQL/provider        LINQ Objects
+ To jest architektonicznie bardzo czyste.
+
+ Dla:
+
+IQueryable<Customer> query
+
+robisz:
+
+Expression<Func<Customer, bool>> expression =
+    FilterExpressionBuilder.Build<Customer>(
+        filter);
+
+query = query.Where(expression);
+
+Nie:
+
+query
+    .AsEnumerable()
+    .Where(expression.Compile());
+
+
+    GridFilter/
+│
+├── GridFilter.cs
+│
+├── FilterContext.cs
+│
+├── FilterDefinition.cs
+│
+├── FilterOperator.cs
+│
+├── FilterExpressionBuilder.cs
+│
+├── IDataSourceAdapter.cs
+│
+├── EnumerableDataSourceAdapter.cs
+│
+└── QueryableDataSourceAdapter.cs
+
+GridFilter
+   │
+   ├── UI
+   ├── TextBox / ComboBox
+   ├── eventy DataGridView
+   └── zarządzanie filtrem
+             │
+             ▼
+      FilterDefinition
+             │
+             ▼
+   FilterExpressionBuilder
+             │
+       ┌─────┴─────┐
+       ▼           ▼
+ IEnumerable    IQueryable
+       │           │
+       ▼           ▼
+ Compile()       Expression
+       │           │
+       ▼           ▼
+ LINQ memory     Provider/SQL

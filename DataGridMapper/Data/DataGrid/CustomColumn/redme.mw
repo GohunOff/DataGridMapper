@@ -1,0 +1,886 @@
+﻿CustomColumn – architektura, przepływ i założenia
+1. Cel
+CustomColumn<TData, TView> służy do wyświetlania w DataGridView zawartości, której standardowe kolumny DataGridView nie potrafią bezpośrednio przedstawić.
+
+Przykładowym zastosowaniem jest wyświetlanie złożonego widoku WinForms jako pojedynczej komórki:
+
+Person
+ ├── Name
+ ├── Address
+ ├── Status
+ ├── Avatar
+ └── ...
+
+Widok TView jest renderowany do Bitmap, a następnie bitmapa jest wyświetlana w komórce DataGridView.
+
+Architektura została zaprojektowana tak, aby:
+
+nie tworzyć osobnego Control dla każdej komórki,
+
+wykorzystywać jeden współdzielony renderer TView,
+
+unikać wielokrotnego renderowania tej samej zawartości,
+
+ograniczać zużycie pamięci przez cache LRU,
+
+nie przechowywać obiektów Bitmap bezpośrednio w cache,
+
+umożliwiać używanie dowolnych własnych widoków implementujących IGridView<TData>.
+
+2. Główne elementy
+Mechanizm składa się z kilku elementów:
+
+DataGridView
+      │
+      ▼
+CustomColumn<TData, TView>
+      │
+      ├── View : TView
+      │
+      ├── RenderHost
+      │
+      └── BitmapCache
+              │
+              └── byte[]
+      
+      ▼
+CustomCell<TData, TView>
+
+CustomColumn<TData, TView>
+Reprezentuje kolumnę DataGridView przeznaczoną do renderowania własnego widoku.
+
+Przechowuje:
+
+RenderHost,
+
+współdzielony View,
+
+BitmapCache,
+
+KeySelector.
+
+CustomCell<TData, TView>
+Odpowiada za faktyczne rysowanie zawartości komórki.
+
+Podczas Paint():
+
+pobiera dane,
+
+tworzy klucz cache,
+
+sprawdza cache,
+
+w przypadku MISS konfiguruje View,
+
+renderuje View,
+
+zapisuje wynik do cache,
+
+pobiera bitmapę,
+
+rysuje ją w komórce.
+
+TView
+Jest właściwym widokiem WinForms.
+
+Musi:
+
+dziedziczyć po Control
+
+oraz implementować:
+
+IGridView<TData>
+
+BitmapCache
+Przechowuje wyrenderowane obrazy.
+
+Cache nie przechowuje bezpośrednio obiektów Bitmap.
+
+Bitmapa jest konwertowana do:
+
+Bitmap → byte[]
+
+a podczas odczytu:
+
+byte[] → Bitmap
+
+Cache wykorzystuje mechanizm LRU oraz limit pamięci.
+
+3. Wymagania dla TData
+Typ danych używany przez CustomColumn musi implementować:
+
+public interface ICustomColumnData
+{
+    int Id { get; set; }
+}
+
+Id jest obecnie podstawowym identyfikatorem wykorzystywanym do budowy klucza cache.
+
+Przykład:
+
+public class Person : ICustomColumnData
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; }
+
+    public string Address { get; set; }
+}
+
+Założenie jest takie, że Id jednoznacznie identyfikuje dane, których reprezentację wizualną chcemy cache'ować.
+
+4. Wymagania dla TView
+Widok musi spełniać dwa warunki.
+
+Po pierwsze:
+
+where TView : Control
+
+czyli musi być kontrolką WinForms.
+
+Po drugie musi implementować:
+
+IGridView<TData>
+
+Przykładowo:
+
+public class PersonView :
+    UserControl,
+    IGridView<Person>
+{
+    public void SetData(Person data)
+    {
+        ...
+    }
+}
+
+SetData() przygotowuje widok do renderowania konkretnego obiektu.
+
+5. Współdzielenie View
+Bardzo ważnym założeniem architektury jest to, że View jest świadomie współdzielony.
+
+CustomColumn posiada jedną instancję:
+
+public TView View { get; private set; }
+
+czyli:
+
+CustomColumn
+      │
+      └── View
+
+a nie:
+
+CustomColumn
+      │
+      ├── View #1
+      ├── View #2
+      ├── View #3
+      └── View #4
+
+Nie tworzymy TView dla każdej komórki.
+
+Dlaczego?
+DataGridView może posiadać bardzo dużą liczbę wierszy.
+
+Tworzenie pełnej kontrolki WinForms dla każdej komórki byłoby kosztowne pod względem:
+
+pamięci,
+
+liczby obiektów,
+
+obsługi uchwytów/zasobów WinForms,
+
+czasu inicjalizacji,
+
+czasu renderowania.
+
+Zamiast tego mamy:
+
+          ┌─────────────────────┐
+          │ CustomColumn         │
+          │                     │
+          │      View           │
+          │       │             │
+          └───────┼─────────────┘
+                  │
+          ┌───────┴────────┐
+          ▼                ▼
+       Person 1          Person 2
+       render            render
+
+View działa jako tymczasowy renderer.
+
+6. Ważna konsekwencja współdzielenia View
+Ponieważ View jest współdzielony, nie może być traktowany jako osobny stan każdej komórki.
+
+Nie wolno zakładać:
+
+Cell 1 → posiada własny View
+Cell 2 → posiada własny View
+
+Zamiast tego:
+
+View
+ ↓
+SetData(Person 1)
+ ↓
+Render
+ ↓
+wynik zapisany do cache
+
+następnie:
+
+View
+ ↓
+SetData(Person 2)
+ ↓
+Render
+ ↓
+wynik zapisany do cache
+
+Po zakończeniu Render() stan View nie jest już potrzebny dla poprzedniej komórki, ponieważ wynik znajduje się w cache.
+
+Dlatego View powinien być traktowany jako stateless renderer z chwilowym stanem renderowania.
+
+7. Przepływ Paint()
+Najważniejszym elementem całego mechanizmu jest metoda:
+
+CustomCell.Paint(...)
+
+Przepływ wygląda następująco:
+
+Paint()
+  │
+  ├── pobierz CustomColumn
+  │
+  ├── narysuj standardowe elementy DataGridView
+  │
+  ├── pobierz TData
+  │
+  ├── utwórz BitmapCacheKey
+  │
+  └── Cache.TryGet()
+          │
+          ├── HIT
+          │     │
+          │     └── DrawImage()
+          │
+          └── MISS
+                │
+                ├── View.SetData(data)
+                │
+                ├── RenderHost.Render(View)
+                │
+                ├── Cache.Set(bitmap)
+                │
+                ├── Cache.TryGet()
+                │
+                └── DrawImage()
+
+8. Cache HIT
+Jeżeli bitmapa istnieje w cache:
+
+if (column.Cache.TryGet(key, out bitmap))
+
+renderowanie nie jest wykonywane.
+
+Nie wykonujemy:
+
+View.SetData(...)
+
+ani:
+
+RenderHost.Render(...)
+
+Wykonywane jest tylko:
+
+graphics.DrawImage(...)
+
+To jest podstawowy mechanizm optymalizacyjny.
+
+9. Cache MISS
+Jeżeli bitmapy nie ma w cache:
+
+Cache.TryGet()
+      │
+      ▼
+    MISS
+      │
+      ▼
+View.SetData(data)
+      │
+      ▼
+RenderHost.Render(...)
+      │
+      ▼
+Bitmap
+      │
+      ▼
+Cache.Set()
+
+Po zapisaniu do cache bitmapa źródłowa jest zwalniana:
+
+using (Bitmap rendered = ...)
+
+BitmapCache przechowuje tylko byte[].
+
+Następnie CustomCell pobiera świeżą bitmapę:
+
+Cache.TryGet(key, out bitmap)
+
+i rysuje ją.
+
+10. Dlaczego po Cache.Set() wykonywany jest ponownie TryGet()
+BitmapCache.Set() nie przechowuje przekazanej instancji Bitmap.
+
+Wykonuje:
+
+Bitmap
+   ↓
+Encode()
+   ↓
+byte[]
+   ↓
+cache
+
+Dlatego obiekt rendered nie jest obiektem, który powinien być później rysowany przez CustomCell.
+
+Po Set() pobieramy niezależną bitmapę:
+
+cache
+  ↓
+byte[]
+  ↓
+Decode()
+  ↓
+new Bitmap()
+
+Dzięki temu cykl życia bitmap jest jednoznaczny.
+
+11. Zarządzanie pamięcią Bitmap
+BitmapCache nie przechowuje:
+
+Dictionary<Key, Bitmap>
+
+lecz:
+
+Dictionary<Key, CacheEntry>
+
+gdzie CacheEntry zawiera:
+
+byte[] Data
+
+Daje to kilka korzyści.
+
+Przede wszystkim cache nie musi zarządzać życiem obiektów GDI+.
+
+Cache przechowuje dane:
+
+byte[]
+
+natomiast CustomCell otrzymuje tymczasową:
+
+Bitmap
+
+i jest odpowiedzialny za jej zwolnienie:
+
+using (bitmap)
+{
+    graphics.DrawImage(bitmap, cellBounds);
+}
+
+12. LRU Cache
+BitmapCache wykorzystuje algorytm LRU:
+
+Least Recently Used
+
+Każdy wpis ma pozycję na liście.
+
+Po użyciu:
+
+TryGet()
+
+element jest przenoszony na początek listy.
+
+Jeżeli limit pamięci zostanie przekroczony, usuwane są elementy z końca:
+
+najstarszy / najmniej używany
+            ↓
+          Remove()
+
+Dzięki temu cache automatycznie ogranicza zużycie pamięci.
+
+13. Limit pamięci
+Cache posiada limit:
+
+MaxMemoryMB
+
+Przykład:
+
+new BitmapCache(20)
+
+oznacza maksymalnie około:
+
+20 MB
+
+zakodowanych danych obrazu.
+
+Jeżeli pojedynczy obraz jest większy niż cały dostępny limit:
+
+image > MaxMemoryBytes
+
+nie jest przechowywany.
+
+14. BitmapCacheKey
+Aktualny klucz składa się z:
+
+new BitmapCacheKey(
+    data.Id,
+    cellBounds.Size,
+    ImageFormat.Png,
+    90L);
+
+Czyli wynik renderowania jest zależny od:
+
+Id,
+
+rozmiaru komórki,
+
+formatu obrazu,
+
+jakości.
+
+W praktyce oznacza to, że ten sam obiekt może mieć kilka wersji bitmapy:
+
+Id = 10
+Size = 200x80
+
+Id = 10
+Size = 300x100
+
+Obie bitmapy mogą znajdować się jednocześnie w cache.
+
+15. Założenie dotyczące Id
+Id identyfikuje reprezentację danych w cache.
+
+Obecny model zakłada:
+
+Id → reprezentacja wizualna
+
+Jeżeli dane obiektu zmienią się, a Id pozostanie takie samo, istnieje możliwość otrzymania starej bitmapy.
+
+Dlatego system powinien stosować jedną z dwóch zasad:
+
+Opcja A – dane są traktowane jako niezmienne
+Po utworzeniu obiektu jego dane wizualne nie zmieniają się.
+
+Opcja B – cache jest unieważniany
+Po zmianie danych usuwamy odpowiedni wpis z cache.
+
+Przykładowo:
+
+cache.Remove(key);
+
+W przyszłości można również rozszerzyć klucz o numer wersji danych:
+
+Id + Version + Size + Format + Quality
+
+16. Paint nie powinien modyfikować danych
+Paint() powinien być traktowany jako operacja odczytująca dane i generująca obraz.
+
+Nie należy w nim:
+
+zmieniać modelu,
+
+zapisywać danych,
+
+wykonywać operacji biznesowych,
+
+wykonywać długotrwałych operacji I/O,
+
+ładować danych z bazy.
+
+Paint() może być wywoływany wielokrotnie przez WinForms.
+
+Przykładowo samo przewijanie DataGridView może powodować wielokrotne wywołania Paint().
+
+17. Renderowanie jest wykonywane tylko na Cache MISS
+To jedno z podstawowych założeń:
+
+CACHE HIT
+    → brak SetData()
+    → brak Render()
+    → DrawImage()
+
+CACHE MISS
+    → SetData()
+    → Render()
+    → Cache.Set()
+    → DrawImage()
+
+Dzięki temu koszt renderowania ponosimy przede wszystkim podczas pierwszego wyświetlenia danego elementu.
+
+18. RenderHost
+AncherRenderHost jest odpowiedzialny za faktyczne wyrenderowanie kontrolki TView do bitmapy.
+
+Architektura rozdziela więc:
+
+CustomCell
+    → kiedy renderować?
+
+RenderHost
+    → jak wyrenderować?
+
+BitmapCache
+    → gdzie przechować wynik?
+
+Dzięki temu CustomCell nie musi wiedzieć, w jaki sposób TView jest renderowany.
+
+19. Odpowiedzialności klas
+CustomColumn
+Odpowiada za:
+
+konfigurację kolumny,
+
+utworzenie CustomCell,
+
+przechowywanie współdzielonego View,
+
+przechowywanie RenderHost,
+
+przechowywanie BitmapCache.
+
+CustomCell
+Odpowiada za:
+
+obsługę Paint(),
+
+utworzenie klucza cache,
+
+sprawdzenie cache,
+
+uruchomienie renderowania przy MISS,
+
+narysowanie bitmapy.
+
+TView
+Odpowiada za:
+
+przygotowanie wyglądu na podstawie TData,
+
+renderowanie zawartości.
+
+RenderHost
+Odpowiada za:
+
+zamianę TView na Bitmap.
+
+BitmapCache
+Odpowiada za:
+
+przechowywanie wyników renderowania,
+
+LRU,
+
+limit pamięci,
+
+kodowanie bitmap,
+
+dekodowanie bitmap,
+
+zwalnianie danych cache.
+
+20. Cykl życia bitmapy
+Przy renderowaniu
+TView
+  │
+  ▼
+RenderHost
+  │
+  ▼
+Bitmap rendered
+  │
+  ▼
+BitmapCache.Set()
+  │
+  ▼
+Encode
+  │
+  ▼
+byte[]
+  │
+  ▼
+Cache
+
+rendered jest następnie zwalniany.
+
+Przy wyświetlaniu
+Cache
+  │
+  ▼
+byte[]
+  │
+  ▼
+Decode
+  │
+  ▼
+Bitmap
+  │
+  ▼
+Graphics.DrawImage()
+  │
+  ▼
+Dispose()
+
+Bitmapa zwrócona przez TryGet() jest tymczasowa i należy ją zwolnić po użyciu.
+
+21. Najważniejsze założenie architektoniczne
+Cały mechanizm można sprowadzić do jednej zasady:
+
+TView jest rendererem, a nie właścicielem stanu komórki.
+
+Komórka nie posiada własnego widoku.
+
+Zamiast tego:
+
+TData
+  ↓
+Cache?
+  ↓
+MISS
+  ↓
+wspólny TView
+  ↓
+Render
+  ↓
+BitmapCache
+  ↓
+gotowy obraz
+
+Dzięki temu możemy mieć:
+
+1000 wierszy
+1000 komórek CustomColumn
+        ↓
+     1 TView
+     1 BitmapCache
+
+zamiast:
+
+1000 wierszy
+        ↓
+1000 instancji TView
+
+22. Ograniczenie: współbieżność
+Współdzielony View oznacza również, że mechanizm nie powinien wykonywać równoległego renderowania tego samego CustomColumn.
+
+TView jest obiektem WinForms i jego stan jest zmieniany przez:
+
+View.SetData(data);
+
+dlatego renderer powinien być używany sekwencyjnie.
+
+Typowy przepływ DataGridView.Paint() na UI thread jest zgodny z tym założeniem.
+
+Jeżeli w przyszłości renderowanie miałoby zostać przeniesione do wielu wątków, współdzielony View nie może być wtedy używany bez dodatkowego mechanizmu synchronizacji lub zmiany architektury.
+
+23. Podsumowanie
+CustomColumn jest mechanizmem typu:
+
+Data → View → Bitmap → Cache → DataGridView
+
+ale renderowanie odbywa się tylko wtedy, gdy wynik nie znajduje się już w cache.
+
+Najważniejszy przepływ:
+
+                    ┌───────────────┐
+                    │   TData       │
+                    │     Id        │
+                    └───────┬───────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ BitmapCacheKey│
+                    └───────┬───────┘
+                            │
+                            ▼
+                    ┌───────────────┐
+                    │ BitmapCache   │
+                    └───────┬───────┘
+                            │
+                 ┌──────────┴──────────┐
+                 │                     │
+                HIT                   MISS
+                 │                     │
+                 ▼                     ▼
+             Bitmap             View.SetData()
+                 │                     │
+                 │                     ▼
+                 │              RenderHost.Render()
+                 │                     │
+                 │                     ▼
+                 │                Bitmap
+                 │                     │
+                 │                     ▼
+                 │                Cache.Set()
+                 │                     │
+                 └──────────┬──────────┘
+                            │
+                            ▼
+                     DrawImage()
+                            │
+                            ▼
+                       Dispose()
+
+Kluczowe zasady
+TData musi implementować ICustomColumnData.
+
+Id identyfikuje dane w cache.
+
+TView musi być Control i implementować IGridView<TData>.
+
+Jedna instancja TView jest współdzielona przez CustomColumn.
+
+TView jest używany wyłącznie do generowania bitmapy.
+
+SetData() wykonujemy tylko przy CACHE MISS.
+
+Render() wykonujemy tylko przy CACHE MISS.
+
+BitmapCache przechowuje byte[], a nie Bitmap.
+
+Bitmapę zwróconą przez TryGet() należy Dispose().
+
+Cache wykorzystuje LRU i limit pamięci.
+
+Zmiana danych przy tym samym Id wymaga unieważnienia cache albo zastosowania wersjonowania klucza.
+
+Paint() nie powinien wykonywać operacji biznesowych ani długotrwałego I/O.
+
+Współdzielony TView zakłada sekwencyjne użycie renderera.
+
+
+
+Ocena AncherRenderHost
+Jego rola jest bardzo konkretna:
+
+CustomCell
+   │
+   │ cache miss
+   ▼
+CustomColumn
+   │
+   ▼
+AncherRenderHost.Render(...)
+   │
+   ├── attach TView
+   ├── ustawia Size
+   ├── wykonuje layout
+   ├── DrawToBitmap()
+   └── zwraca Bitmap
+           │
+           ▼
+       BitmapCache
+
+
+       AncherRenderHost jest wymagany przez CustomColumn, ponieważ TView jest kontrolką WinForms i musi posiadać hosta podczas renderowania do bitmapy.
+       -------------------------------
+       CustomColumn<TData, TView>
+Odpowiada za:
+
+konfigurację renderera,
+
+przechowywanie TView,
+
+AncherRenderHost,
+
+BitmapCache,
+
+opcjonalny KeySelector.
+
+CustomCell<TData, TView>
+Odpowiada za:
+
+pobranie danych komórki,
+
+wyliczenie BitmapCacheKey,
+
+sprawdzenie cache,
+
+uruchomienie renderowania przy cache miss,
+
+narysowanie bitmapy.
+
+TView
+Odpowiada za:
+
+prezentację TData,
+
+przygotowanie swojego stanu przez SetData(),
+
+własny wygląd,
+
+renderowanie jako zwykły WinForms Control.
+
+AncherRenderHost
+Odpowiada wyłącznie za:
+
+hostowanie TView,
+
+ustawienie rozmiaru,
+
+wykonanie layoutu,
+
+renderowanie TView do Bitmap.
+
+BitmapCache
+Odpowiada za:
+
+przechowywanie wyrenderowanych obrazów,
+
+LRU,
+
+limit pamięci,
+
+serializację bitmapy do byte[],
+
+tworzenie niezależnej Bitmap przy TryGet().
+
+Całościowo
+Twoja architektura wygląda teraz sensownie:
+
+                     DataGridView
+                          │
+                          ▼
+                    CustomCell.Paint
+                          │
+                    ┌─────┴─────┐
+                    │           │
+                 CACHE HIT   CACHE MISS
+                    │           │
+                    │           ▼
+                    │       TView.SetData()
+                    │           │
+                    │           ▼
+                    │    AncherRenderHost
+                    │           │
+                    │           ▼
+                    │      DrawToBitmap
+                    │           │
+                    │           ▼
+                    │      BitmapCache
+                    │           │
+                    └─────┬─────┘
+                          ▼
+                    Bitmap.Decode
+                          │
+                          ▼
+                    DrawImage()
+                          │
+                          ▼
+                       Dispose
+
+I w takim modelu AncherRenderHost jako wymagany parametr CustomColumn jest właściwym rozwiązaniem.
+
+Jedyna rzecz, którą szczególnie pilnowałbym dalej, to współbieżność/reentrancy. DataGridView.Paint() jest zasadniczo UI-threadowy, a ponieważ masz jedną współdzieloną TView, absolutnie nie powinieneś próbować renderować tej samej kolumny równolegle z kilku wątków bez dodatkowej synchronizacji.
