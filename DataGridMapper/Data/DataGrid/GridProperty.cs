@@ -1,6 +1,7 @@
 ﻿using MC.Data.DataGrid.CustomColumn;
 using MC.Data.DataGrid.I;
 using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 using System.Linq;
 using System.Reflection;
@@ -8,72 +9,113 @@ using System.Windows.Forms;
 
 namespace MC.Data.DataGrid
 {
-    public static class GridProperty
+    public class GridProperty
     {
-        [AttributeUsage(AttributeTargets.Property)]
-        public class GridViewAttribute : Attribute
+        private readonly DataGridView grid;
+        private readonly ControlRenderHost ancherRenderHost;
+        private IGridActionRegistry actionRegistry;
+        private Type configuredModelType;
+        private DataGridViewCellEventHandler buttonClickHandler;
+
+        public GridProperty(DataGridView grid, ControlRenderHost ancherRenderHost = null)
         {
-            public enum eColumnType
-            {
-                None,
-                Text,
-                Number,
-                Date,
-                Time,
-                DateTime,
-                Button,
-                Tooltip,
-                MemoEdit,
-                Boolean,
-                CustomColumn
-            }
+            this.grid = grid
+                ?? throw new ArgumentNullException(nameof(grid));
 
-            public string Name { get; set; }
-            public bool Ignore { get; set; }
-            public bool Visibility { get; set; } = true;
-            public bool AllowEdit { get; set; }
-            public string ColumnName { get; set; }
-            public eColumnType ColumnType { get; set; }
-            public string Format { get; set; }
-            public Type CustomColumnType { get; set; }
-
-            public GridViewAttribute(
-                string name,
-                bool ignore = false,
-                bool visibility = true,
-                bool allowEdit = false,
-                string columnName = "",
-                string format = "",
-                eColumnType columnType = eColumnType.None)
-            {
-                Name = name;
-                Ignore = ignore;
-                Visibility = visibility;
-                AllowEdit = allowEdit;
-                ColumnName = columnName;
-                ColumnType = columnType;
-                Format = format;
-            }
+            this.ancherRenderHost = ancherRenderHost;
         }
 
-        private static string GetFormat(
-                    GridViewAttribute attribute,
-                    string defaultFormat)
+        private interface IGridActionRegistry
         {
-            return string.IsNullOrWhiteSpace(attribute.Format)
-                ? defaultFormat
-                : attribute.Format;
+            Type ModelType { get; }
+
+            bool Contains(string key);
+        }
+        private sealed class GridActionRegistry<T> : IGridActionRegistry
+            where T : class
+        {
+            private readonly Dictionary<string, GridAction<T>> _actions;
+
+            public Type ModelType
+            {
+                get { return typeof(T); }
+            }
+
+            public GridActionRegistry()
+            {
+                _actions =
+                    new Dictionary<string, GridAction<T>>(
+                        StringComparer.OrdinalIgnoreCase);
+            }
+
+            public bool Contains(string key)
+            {
+                return !string.IsNullOrWhiteSpace(key)
+                    && _actions.ContainsKey(key);
+            }
+
+            public bool TryGet(
+                string key,
+                out GridAction<T> action)
+            {
+                return _actions.TryGetValue(
+                    key,
+                    out action);
+            }
+
+            public GridAction<T> Get(string key)
+            {
+                GridAction<T> action;
+
+                if (!_actions.TryGetValue(
+                        key,
+                        out action))
+                {
+                    throw new InvalidOperationException(
+                        $"Action '{key}' is not registered.");
+                }
+
+                return action;
+            }
+
+            public GridAction<T> Register(string key)
+            {
+                GridAction<T> action;
+
+                if (_actions.TryGetValue(
+                        key,
+                        out action))
+                {
+                    return action;
+                }
+
+                action = new GridAction<T>(key);
+
+                _actions.Add(
+                    key,
+                    action);
+
+                return action;
+            }
         }
 
         /// <summary>
         /// Initializes a standard WinForms DataGridView
         /// based on GridViewAttribute attributes.
         /// </summary>
-        public static bool InitData<T>(DataGridView grid, ControlRenderHost ancherRenderHost = null)
+        public bool InitData<T>()
             where T : class
         {
             if (grid == null)
                 throw new ArgumentNullException(nameof(grid));
+
+            if (configuredModelType != null &&
+                configuredModelType != typeof(T))
+            {
+                RemoveButtonActions();
+
+                actionRegistry = null;
+            }
 
             grid.Columns.Clear();
 
@@ -93,11 +135,11 @@ namespace MC.Data.DataGrid
 
                 return false;
             }
-
+            bool hasButtonColumns = false;
             grid.SuspendLayout();
             try
             {
-                ConfigureGrid(grid);
+                ConfigureGrid();
 
                 int visibleIndex = 0;
 
@@ -113,6 +155,17 @@ namespace MC.Data.DataGrid
                         continue;
 
                     ValidateColumnType(property, attribute);
+
+                    if (attribute.ColumnType ==
+                        GridViewAttribute.eColumnType.Button)
+                    {
+                        RegisterAction<T>(
+                            attribute.ActionName);
+
+                        ValidateAction<T>(
+                            attribute.ActionName);
+                        hasButtonColumns = true;
+                    }
 
                     string propertyName = property.Name;
 
@@ -176,6 +229,11 @@ namespace MC.Data.DataGrid
                 grid.AllowUserToResizeRows = false;
 
                 grid.RowHeadersVisible = false;
+                if (hasButtonColumns)
+                    ConfigureButtonActions<T>();
+
+                configuredModelType = typeof(T);
+
                 return true;
             }
             catch (Exception ex)
@@ -193,8 +251,17 @@ namespace MC.Data.DataGrid
                 grid.ResumeLayout(true);
             }
         }
+        public GridAction<T> GetAction<T>(
+            string key)
+            where T : class
+        {
+            GridActionRegistry<T> registry =
+                ValidateAction<T>(key);
 
-        private static void ValidateColumnType(
+            return registry.Get(key.Trim());
+        }
+
+        private void ValidateColumnType(
             PropertyInfo property,
             GridViewAttribute attribute)
         {
@@ -208,14 +275,33 @@ namespace MC.Data.DataGrid
                 Nullable.GetUnderlyingType(property.PropertyType)
                 ?? property.PropertyType;
 
+            // ActionName ma sens wyłącznie dla Button.
+            if (attribute.ColumnType !=
+                GridViewAttribute.eColumnType.Button &&
+                !string.IsNullOrWhiteSpace(attribute.ActionName))
+            {
+                throw new InvalidOperationException(
+                    $"Property '{property.DeclaringType?.FullName}.{property.Name}' " +
+                    $"has ActionName '{attribute.ActionName}', " +
+                    $"but ColumnType is '{attribute.ColumnType}'. " +
+                    "ActionName can only be used with ColumnType.Button.");
+            }
+
             switch (attribute.ColumnType)
             {
                 case GridViewAttribute.eColumnType.None:
                 case GridViewAttribute.eColumnType.Text:
                 case GridViewAttribute.eColumnType.Tooltip:
                 case GridViewAttribute.eColumnType.MemoEdit:
+                    break;
                 case GridViewAttribute.eColumnType.Button:
-                    // No type restriction.
+                    if (string.IsNullOrWhiteSpace(attribute.ActionName))
+                    {
+                        throw new InvalidOperationException(
+                           $"Property '{property.DeclaringType?.FullName}.{property.Name}' " +
+                           "has ColumnType.Button but ActionName has not been specified. " +
+                           "Use GridProperty.InitAction to initialize the action.");
+                    }
                     break;
                 case GridViewAttribute.eColumnType.CustomColumn:
                     ValidateCustomColumnType(property, attribute);
@@ -290,8 +376,7 @@ namespace MC.Data.DataGrid
                         $"Unsupported column type for property '{property.Name}'.");
             }
         }
-
-        private static void ValidateCustomColumnType(
+        private void ValidateCustomColumnType(
             PropertyInfo property,
             GridViewAttribute attribute)
         {
@@ -347,9 +432,192 @@ namespace MC.Data.DataGrid
                     $"({typeof(ControlRenderHost).FullName}, {bitmapCacheType.FullName}).");
             }
         }
+        private GridActionRegistry<T> ValidateAction<T>(
+            string actionName)
+            where T : class
+        {
+            if (string.IsNullOrWhiteSpace(actionName))
+                throw new ArgumentException(
+                    "ActionName cannot be empty.",
+                    nameof(actionName));
 
+            string actionKey = actionName.Trim();
 
-        private static bool IsNumericType(Type type)
+            if (actionRegistry == null)
+            {
+                throw new InvalidOperationException(
+                    "No action registry has been configured.");
+            }
+
+            if (actionRegistry.ModelType != typeof(T))
+            {
+                throw new InvalidOperationException(
+                    $"DataGridView is configured for model " +
+                    $"'{actionRegistry.ModelType.FullName}', " +
+                    $"but action '{actionKey}' expects model " +
+                    $"'{typeof(T).FullName}'.");
+            }
+
+            GridActionRegistry<T> registry =
+                actionRegistry as GridActionRegistry<T>;
+
+            if (registry == null)
+            {
+                throw new InvalidOperationException(
+                    $"Invalid GridActionRegistry type for model " +
+                    $"'{typeof(T).FullName}'.");
+            }
+
+            if (!registry.Contains(actionKey))
+            {
+                throw new InvalidOperationException(
+                    $"Action '{actionKey}' is not registered for model " +
+                    $"'{typeof(T).FullName}'.");
+            }
+
+            return registry;
+        }
+
+        private void ConfigureButtonActions<T>()
+            where T : class
+        {
+            RemoveButtonActions();
+
+            buttonClickHandler =
+                Grid_CellContentClick<T>;
+
+            grid.CellContentClick +=
+                buttonClickHandler;
+        }
+        private void Grid_CellContentClick<T>(
+            object sender,
+            DataGridViewCellEventArgs e)
+            where T : class
+        {
+            DataGridView grid =
+                sender as DataGridView;
+
+            if (grid == null)
+                return;
+
+            if (e.RowIndex < 0 ||
+                e.ColumnIndex < 0)
+                return;
+
+            if (e.ColumnIndex >= grid.Columns.Count)
+                return;
+
+            DataGridViewColumn column =
+                grid.Columns[e.ColumnIndex];
+
+            if (!(column is DataGridViewButtonColumn))
+                return;
+
+            GridViewAttribute attribute =
+                GetAttribute(column);
+
+            if (attribute == null)
+                return;
+
+            if (attribute.ColumnType !=
+                GridViewAttribute.eColumnType.Button)
+                return;
+
+            if (string.IsNullOrWhiteSpace(
+                    attribute.ActionName))
+                return;
+
+            if (e.RowIndex >= grid.Rows.Count)
+                return;
+
+            T item =
+                grid.Rows[e.RowIndex].DataBoundItem as T;
+
+            if (item == null)
+                return;
+
+            // Waliduje:
+            // 1. grid
+            // 2. model T
+            // 3. registry
+            // 4. ActionName
+            GridActionRegistry<T> registry =
+                ValidateAction<T>(
+                    attribute.ActionName);
+
+            GridAction<T> action =
+                registry.Get(
+                    attribute.ActionName);
+
+            action.Raise(
+                item,
+                grid,
+                e.RowIndex,
+                e.ColumnIndex);
+        }
+        private void RegisterAction<T>(
+            string actionName)
+            where T : class
+        {
+            if (string.IsNullOrWhiteSpace(actionName))
+                throw new ArgumentException(
+                    "ActionName cannot be empty.",
+                    nameof(actionName));
+
+            string actionKey = actionName.Trim();
+
+            if (actionRegistry == null)
+            {
+                GridActionRegistry<T> newRegistry =
+                    new GridActionRegistry<T>();
+
+                newRegistry.Register(actionKey);
+
+                actionRegistry = newRegistry;
+
+                return;
+            }
+
+            if (actionRegistry.ModelType != typeof(T))
+            {
+                throw new InvalidOperationException(
+                    $"DataGridView is already configured for " +
+                    $"model '{actionRegistry.ModelType.FullName}', " +
+                    $"but '{typeof(T).FullName}' was requested.");
+            }
+
+            GridActionRegistry<T> registry =
+                actionRegistry as GridActionRegistry<T>;
+
+            if (registry == null)
+            {
+                throw new InvalidOperationException(
+                    "Invalid GridActionRegistry type.");
+            }
+
+            registry.Register(actionKey);
+        }
+        private void RemoveButtonActions()
+        {
+            if (buttonClickHandler == null)
+                return;
+
+            grid.CellContentClick -=
+                buttonClickHandler;
+
+            buttonClickHandler = null;
+        }
+
+        private string GetFormat(
+            GridViewAttribute attribute,
+            string defaultFormat)
+        {
+            return string.IsNullOrWhiteSpace(attribute.Format)
+                ? defaultFormat
+                : attribute.Format;
+        }
+
+        private bool IsNumericType(Type type)
         {
             return type == typeof(byte)
                 || type == typeof(sbyte)
@@ -363,11 +631,10 @@ namespace MC.Data.DataGrid
                 || type == typeof(double)
                 || type == typeof(decimal);
         }
-
         /// <summary>
         /// Configures the basic properties of the DataGridView.
         /// </summary>
-        private static void ConfigureGrid(DataGridView grid)
+        private void ConfigureGrid()
         {
             grid.AutoGenerateColumns = false;
 
@@ -394,13 +661,12 @@ namespace MC.Data.DataGrid
 
             grid.EnableHeadersVisualStyles = true;
         }
-
         /// <summary>
         /// Creates the appropriate DataGridView column type.
         /// </summary>
-        private static DataGridViewColumn CreateColumn(
+        private DataGridViewColumn CreateColumn(
             PropertyInfo property,
-            GridViewAttribute attribute, 
+            GridViewAttribute attribute,
             ControlRenderHost renderHost = null)
         {
             switch (attribute.ColumnType)
@@ -436,11 +702,10 @@ namespace MC.Data.DataGrid
                     return new DataGridViewTextBoxColumn();
             }
         }
-
         /// <summary>
         /// Configures a specific column.
         /// </summary>
-        private static void ConfigureColumn(
+        private void ConfigureColumn(
             DataGridViewColumn column,
             PropertyInfo property,
             GridViewAttribute attribute)
@@ -458,8 +723,17 @@ namespace MC.Data.DataGrid
                     break;
 
                 case GridViewAttribute.eColumnType.Time:
-                    column.DefaultCellStyle.Format =
-                        GetFormat(attribute, "HH:mm:ss");
+                    if (property.PropertyType == typeof(TimeSpan) ||
+                        Nullable.GetUnderlyingType(property.PropertyType) == typeof(TimeSpan))
+                    {
+                        column.DefaultCellStyle.Format =
+                            GetFormat(attribute, @"hh\:mm\:ss");
+                    }
+                    else
+                    {
+                        column.DefaultCellStyle.Format =
+                            GetFormat(attribute, "HH:mm:ss");
+                    }
                     break;
 
                 case GridViewAttribute.eColumnType.DateTime:
@@ -501,21 +775,19 @@ namespace MC.Data.DataGrid
                                 : attribute.Name;
                     }
 
-                    break;     
+                    break;
             }
 
         }
-
         /// <summary>
         /// Enables tooltip support.
         /// </summary>
-        private static void ConfigureToolTips(DataGridView grid)
+        private void ConfigureToolTips(DataGridView grid)
         {
             grid.CellToolTipTextNeeded -= Grid_CellToolTipTextNeeded;
             grid.CellToolTipTextNeeded += Grid_CellToolTipTextNeeded;
         }
-
-        private static void Grid_CellToolTipTextNeeded(
+        private void Grid_CellToolTipTextNeeded(
             object sender,
             DataGridViewCellToolTipTextNeededEventArgs e)
         {
@@ -550,17 +822,15 @@ namespace MC.Data.DataGrid
                     ? string.Empty
                     : Convert.ToString(value);
         }
-
         /// <summary>
         /// Gets the attribute assigned to the column.
         /// </summary>
-        private static GridViewAttribute GetAttribute(
+        private GridViewAttribute GetAttribute(
             DataGridViewColumn column)
         {
             return column?.Tag as GridViewAttribute;
         }
-
-        private static DataGridViewColumn CreateCustomColumn(
+        private DataGridViewColumn CreateCustomColumn(
             PropertyInfo property,
             GridViewAttribute attribute,
             ControlRenderHost renderHost)

@@ -56,7 +56,20 @@
     <Compile Include="Data\DataGrid\BitmapCache\BitmapCacheOptions.cs" />
     <Compile Include="Data\DataGrid\CustomColumn\CustomCell.cs" />
     <Compile Include="Data\DataGrid\CustomColumn\CustomColumn.cs" />
+    <Compile Include="Data\DataGrid\Filter\BindingSourceResolver.cs" />
+    <Compile Include="Data\DataGrid\Filter\DataSourceAdapterFactory.cs" />
+    <Compile Include="Data\DataGrid\Filter\EnumerableDataSourceAdapter.cs" />
+    <Compile Include="Data\DataGrid\Filter\FilterContext.cs" />
+    <Compile Include="Data\DataGrid\Filter\FilterDefinition.cs" />
+    <Compile Include="Data\DataGrid\Filter\FilterEditor.cs" />
+    <Compile Include="Data\DataGrid\Filter\FilterExpressionBuilder.cs" />
+    <Compile Include="Data\DataGrid\Filter\FilterOperator.cs" />
+    <Compile Include="Data\DataGrid\Filter\I\IDataSourceAdapter.cs" />
+    <Compile Include="Data\DataGrid\Filter\QueryableDataSourceAdapter.cs" />
+    <Compile Include="Data\DataGrid\GridAction.cs" />
+    <Compile Include="Data\DataGrid\GridActionEventArgs.cs" />
     <Compile Include="Data\DataGrid\GridFilter.cs" />
+    <Compile Include="Data\DataGrid\GridViewAttribute.cs" />
     <Compile Include="Data\DataGrid\I\ICustomColumnData.cs" />
     <Compile Include="Data\DataGrid\I\IGridView.cs" />
     <Compile Include="Data\DataGrid\GridProperty.cs" />
@@ -65,6 +78,7 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Data\DataGrid\CustomColumn\redme.mw" />
+    <None Include="Data\DataGrid\info2.xt" />
   </ItemGroup>
   <ItemGroup>
     <Content Include="Data\DataGrid\into.txt" />
