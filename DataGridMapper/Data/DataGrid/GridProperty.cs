@@ -157,7 +157,7 @@ namespace MC.Data.DataGrid
                     ValidateColumnType(property, attribute);
 
                     if (attribute.ColumnType ==
-                        GridViewAttribute.eColumnType.Button)
+                        GridViewAttribute.EColumnType.Button)
                     {
                         RegisterAction<T>(
                             attribute.ActionName);
@@ -277,7 +277,7 @@ namespace MC.Data.DataGrid
 
             // ActionName ma sens wyłącznie dla Button.
             if (attribute.ColumnType !=
-                GridViewAttribute.eColumnType.Button &&
+                GridViewAttribute.EColumnType.Button &&
                 !string.IsNullOrWhiteSpace(attribute.ActionName))
             {
                 throw new InvalidOperationException(
@@ -289,12 +289,12 @@ namespace MC.Data.DataGrid
 
             switch (attribute.ColumnType)
             {
-                case GridViewAttribute.eColumnType.None:
-                case GridViewAttribute.eColumnType.Text:
-                case GridViewAttribute.eColumnType.Tooltip:
-                case GridViewAttribute.eColumnType.MemoEdit:
+                case GridViewAttribute.EColumnType.None:
+                case GridViewAttribute.EColumnType.Text:
+                case GridViewAttribute.EColumnType.Tooltip:
+                case GridViewAttribute.EColumnType.MemoEdit:
                     break;
-                case GridViewAttribute.eColumnType.Button:
+                case GridViewAttribute.EColumnType.Button:
                     if (string.IsNullOrWhiteSpace(attribute.ActionName))
                     {
                         throw new InvalidOperationException(
@@ -303,11 +303,11 @@ namespace MC.Data.DataGrid
                            "Use GridProperty.InitAction to initialize the action.");
                     }
                     break;
-                case GridViewAttribute.eColumnType.CustomColumn:
+                case GridViewAttribute.EColumnType.CustomColumn:
                     ValidateCustomColumnType(property, attribute);
                     break;
 
-                case GridViewAttribute.eColumnType.Boolean:
+                case GridViewAttribute.EColumnType.Boolean:
 
                     if (propertyType != typeof(bool))
                     {
@@ -319,7 +319,7 @@ namespace MC.Data.DataGrid
 
                     break;
 
-                case GridViewAttribute.eColumnType.Number:
+                case GridViewAttribute.EColumnType.Number:
 
                     if (!IsNumericType(propertyType))
                     {
@@ -331,7 +331,7 @@ namespace MC.Data.DataGrid
 
                     break;
 
-                case GridViewAttribute.eColumnType.Date:
+                case GridViewAttribute.EColumnType.Date:
 
                     if (propertyType != typeof(DateTime))
                     {
@@ -343,7 +343,7 @@ namespace MC.Data.DataGrid
 
                     break;
 
-                case GridViewAttribute.eColumnType.Time:
+                case GridViewAttribute.EColumnType.Time:
 
                     if (propertyType != typeof(TimeSpan) &&
                         propertyType != typeof(DateTime))
@@ -356,7 +356,7 @@ namespace MC.Data.DataGrid
 
                     break;
 
-                case GridViewAttribute.eColumnType.DateTime:
+                case GridViewAttribute.EColumnType.DateTime:
 
                     if (propertyType != typeof(DateTime))
                     {
@@ -520,7 +520,7 @@ namespace MC.Data.DataGrid
                 return;
 
             if (attribute.ColumnType !=
-                GridViewAttribute.eColumnType.Button)
+                GridViewAttribute.EColumnType.Button)
                 return;
 
             if (string.IsNullOrWhiteSpace(
@@ -671,23 +671,23 @@ namespace MC.Data.DataGrid
         {
             switch (attribute.ColumnType)
             {
-                case GridViewAttribute.eColumnType.Button:
+                case GridViewAttribute.EColumnType.Button:
                     return new DataGridViewButtonColumn();
 
-                case GridViewAttribute.eColumnType.Boolean:
+                case GridViewAttribute.EColumnType.Boolean:
                     return new DataGridViewCheckBoxColumn();
 
-                case GridViewAttribute.eColumnType.Number:
+                case GridViewAttribute.EColumnType.Number:
                     return new DataGridViewTextBoxColumn();
 
-                case GridViewAttribute.eColumnType.Date:
-                case GridViewAttribute.eColumnType.Time:
-                case GridViewAttribute.eColumnType.DateTime:
+                case GridViewAttribute.EColumnType.Date:
+                case GridViewAttribute.EColumnType.Time:
+                case GridViewAttribute.EColumnType.DateTime:
                     return new DataGridViewTextBoxColumn();
 
-                case GridViewAttribute.eColumnType.MemoEdit:
+                case GridViewAttribute.EColumnType.MemoEdit:
                     return new DataGridViewTextBoxColumn();
-                case GridViewAttribute.eColumnType.CustomColumn:
+                case GridViewAttribute.EColumnType.CustomColumn:
                     {
                         return CreateCustomColumn(
                             property,
@@ -695,9 +695,9 @@ namespace MC.Data.DataGrid
                             renderHost);
                     }
 
-                case GridViewAttribute.eColumnType.Tooltip:
-                case GridViewAttribute.eColumnType.Text:
-                case GridViewAttribute.eColumnType.None:
+                case GridViewAttribute.EColumnType.Tooltip:
+                case GridViewAttribute.EColumnType.Text:
+                case GridViewAttribute.EColumnType.None:
                 default:
                     return new DataGridViewTextBoxColumn();
             }
@@ -717,12 +717,12 @@ namespace MC.Data.DataGrid
 
             switch (attribute.ColumnType)
             {
-                case GridViewAttribute.eColumnType.Date:
+                case GridViewAttribute.EColumnType.Date:
                     column.DefaultCellStyle.Format =
                         GetFormat(attribute, "dd.MM.yyyy");
                     break;
 
-                case GridViewAttribute.eColumnType.Time:
+                case GridViewAttribute.EColumnType.Time:
                     if (property.PropertyType == typeof(TimeSpan) ||
                         Nullable.GetUnderlyingType(property.PropertyType) == typeof(TimeSpan))
                     {
@@ -736,12 +736,12 @@ namespace MC.Data.DataGrid
                     }
                     break;
 
-                case GridViewAttribute.eColumnType.DateTime:
+                case GridViewAttribute.EColumnType.DateTime:
                     column.DefaultCellStyle.Format =
                         GetFormat(attribute, "dd.MM.yyyy HH:mm:ss");
                     break;
 
-                case GridViewAttribute.eColumnType.Number:
+                case GridViewAttribute.EColumnType.Number:
                     column.DefaultCellStyle.Format =
                         GetFormat(attribute, "N2");
 
@@ -750,19 +750,19 @@ namespace MC.Data.DataGrid
 
                     break;
 
-                case GridViewAttribute.eColumnType.Boolean:
+                case GridViewAttribute.EColumnType.Boolean:
                     column.DefaultCellStyle.Alignment =
                         DataGridViewContentAlignment.MiddleCenter;
 
                     break;
 
-                case GridViewAttribute.eColumnType.MemoEdit:
+                case GridViewAttribute.EColumnType.MemoEdit:
                     column.DefaultCellStyle.WrapMode =
                         DataGridViewTriState.True;
 
                     break;
 
-                case GridViewAttribute.eColumnType.Button:
+                case GridViewAttribute.EColumnType.Button:
                     DataGridViewButtonColumn buttonColumn =
                         column as DataGridViewButtonColumn;
 
@@ -809,7 +809,7 @@ namespace MC.Data.DataGrid
                 return;
 
             if (attribute.ColumnType !=
-                GridViewAttribute.eColumnType.Tooltip)
+                GridViewAttribute.EColumnType.Tooltip)
                 return;
 
             object value =

@@ -73,16 +73,15 @@
     <Compile Include="Data\DataGrid\I\ICustomColumnData.cs" />
     <Compile Include="Data\DataGrid\I\IGridView.cs" />
     <Compile Include="Data\DataGrid\GridProperty.cs" />
-    <Content Include="Data\DataGrid\Todo2.txt" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Data\DataGrid\CustomColumn\redme.mw" />
-    <None Include="Data\DataGrid\info2.xt" />
+    <None Include="redme.md" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Data\DataGrid\into.txt" />
-    <Content Include="Data\DataGrid\todo.txt" />
+    <Content Include="Data\DataGrid\redr.txt" />
+    <Content Include="Data\DataGrid\TextFile1.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

@@ -1,0 +1,853 @@
+﻿Poniżej uproszczona wersja README — tylko publiczne elementy, które użytkownik biblioteki musi znać, bez opisywania implementacji wewnętrznej (GridActionRegistry, metod private, refleksji itd.). Dodałem też kompletny przykład użycia.
+
+MC.Data.DataGrid
+MC.Data.DataGrid to biblioteka rozszerzająca standardowy WinForms DataGridView.
+
+Pozwala konfigurować kolumny za pomocą atrybutów umieszczanych na właściwościach modelu oraz udostępniać akcje dla kolumn typu Button.
+
+Główne elementy używane przez aplikację to:
+
+GridViewAttribute
+
+GridProperty
+
+GridAction<T>
+
+GridActionEventArgs<T>
+
+ControlRenderHost — wymagany przy CustomColumn
+
+GridFilter — jeżeli aplikacja korzysta z filtrowania
+
+1. Podstawowa konfiguracja
+Typowy sposób użycia wygląda następująco:
+
+private readonly GridProperty _gridProperty;
+
+public Form1()
+{
+    InitializeComponent();
+
+    _gridProperty =
+        new GridProperty(dataGridView1);
+
+    _gridProperty.InitData<MyModel>();
+
+    dataGridView1.DataSource = data;
+}
+
+Konfiguracja kolumn znajduje się w modelu:
+
+public class MyModel
+{
+    [GridView("Nazwa")]
+    public string Name { get; set; }
+
+    [GridView(
+        "Kwota",
+        columnType: GridViewAttribute.EColumnType.Number)]
+    public decimal Amount { get; set; }
+}
+
+2. GridViewAttribute
+GridViewAttribute służy do określenia, w jaki sposób dana właściwość modelu ma być prezentowana w DataGridView.
+
+Przykład:
+
+[GridView("Nazwa")]
+public string Name { get; set; }
+
+Atrybut można stosować wyłącznie do właściwości.
+
+Konstruktor
+GridViewAttribute(
+    string name,
+    bool ignore = false,
+    bool visibility = true,
+    bool allowEdit = false,
+    string columnName = "",
+    string format = "",
+    EColumnType columnType = EColumnType.None,
+    string actionName = "")
+
+Parametry
+Parametr	Znaczenie
+name	Tekst wyświetlany w nagłówku kolumny
+ignore	Całkowicie pomija właściwość
+visibility	Określa widoczność kolumny
+allowEdit	Określa, czy kolumna może być edytowana
+columnName	Nazwa kolumny DataGridView
+format	Format wyświetlania wartości
+columnType	Typ kolumny
+actionName	Nazwa akcji dla Button
+
+3. Typy kolumn
+Biblioteka udostępnia:
+
+GridViewAttribute.EColumnType
+
+Dostępne wartości:
+
+None
+Text
+Number
+Date
+Time
+DateTime
+Button
+Tooltip
+MemoEdit
+Boolean
+CustomColumn
+
+None
+Standardowa kolumna tekstowa.
+
+[GridView("Nazwa")]
+public string Name { get; set; }
+
+None jest wartością domyślną.
+
+Text
+Standardowa kolumna tekstowa.
+
+[GridView(
+    "Nazwa",
+    columnType: GridViewAttribute.EColumnType.Text)]
+public string Name { get; set; }
+
+Number
+Kolumna przeznaczona do wartości liczbowych.
+
+Obsługiwane są:
+
+byte
+sbyte
+short
+ushort
+int
+uint
+long
+ulong
+float
+double
+decimal
+
+Przykład:
+
+[GridView(
+    "Kwota",
+    columnType: GridViewAttribute.EColumnType.Number)]
+public decimal Amount { get; set; }
+
+Domyślny format to:
+
+N2
+
+Można go zmienić:
+
+[GridView(
+    "Kwota",
+    format: "N0",
+    columnType: GridViewAttribute.EColumnType.Number)]
+public decimal Amount { get; set; }
+
+Boolean
+Tworzy kolumnę checkbox.
+
+Właściwość musi być typu:
+
+bool
+
+lub:
+
+bool?
+
+Przykład:
+
+[GridView(
+    "Aktywny",
+    columnType: GridViewAttribute.EColumnType.Boolean)]
+public bool IsActive { get; set; }
+
+Date
+Kolumna przeznaczona dla DateTime.
+
+Domyślny format:
+
+dd.MM.yyyy
+
+Przykład:
+
+[GridView(
+    "Data",
+    columnType: GridViewAttribute.EColumnType.Date)]
+public DateTime Date { get; set; }
+
+Własny format:
+
+[GridView(
+    "Data",
+    format: "yyyy-MM-dd",
+    columnType: GridViewAttribute.EColumnType.Date)]
+public DateTime Date { get; set; }
+
+Time
+Obsługuje:
+
+TimeSpan
+TimeSpan?
+DateTime
+DateTime?
+
+Przykład:
+
+[GridView(
+    "Czas",
+    columnType: GridViewAttribute.EColumnType.Time)]
+public TimeSpan Time { get; set; }
+
+DateTime
+Kolumna dla daty i czasu.
+
+Domyślny format:
+
+dd.MM.yyyy HH:mm:ss
+
+Przykład:
+
+[GridView(
+    "Utworzono",
+    columnType: GridViewAttribute.EColumnType.DateTime)]
+public DateTime CreatedAt { get; set; }
+
+Tooltip
+Wartość komórki jest wyświetlana jako tooltip.
+
+[GridView(
+    "Informacja",
+    columnType: GridViewAttribute.EColumnType.Tooltip)]
+public string Tooltip { get; set; }
+
+MemoEdit
+Kolumna tekstowa przeznaczona do dłuższych tekstów.
+
+[GridView(
+    "Opis",
+    columnType: GridViewAttribute.EColumnType.MemoEdit)]
+public string Description { get; set; }
+
+Tekst jest zawijany.
+
+Button
+Tworzy przycisk w kolumnie.
+
+Dla Button wymagane jest podanie actionName.
+
+[GridView(
+    "Edytuj",
+    columnType: GridViewAttribute.EColumnType.Button,
+    actionName: "Edit")]
+public string Edit { get; set; }
+
+actionName będzie później używane do pobrania akcji:
+
+_gridProperty.GetAction<MyModel>("Edit");
+
+4. Visibility
+Domyślnie kolumna jest widoczna:
+
+[GridView("Nazwa")]
+public string Name { get; set; }
+
+Można ją ukryć:
+
+[GridView(
+    "Wartość ukryta",
+    visibility: false)]
+public string HiddenValue { get; set; }
+
+Kolumna jest wtedy skonfigurowana, ale niewidoczna.
+
+5. Ignore
+Jeżeli właściwość nie ma być obsługiwana przez GridProperty, można ją całkowicie pominąć:
+
+[GridView(
+    "Wartość ignorowana",
+    ignore: true)]
+public string IgnoredValue { get; set; }
+
+Różnica:
+
+Visibility = false
+    → kolumna istnieje, ale jest ukryta
+
+Ignore = true
+    → właściwość jest pomijana podczas konfiguracji
+
+6. AllowEdit
+Domyślnie kolumny są tylko do odczytu.
+
+[GridView(
+    "Nazwa",
+    allowEdit: true)]
+public string Name { get; set; }
+
+umożliwia edycję komórki.
+
+Przykład:
+
+[GridView(
+    "Opis",
+    allowEdit: true,
+    columnType: GridViewAttribute.EColumnType.MemoEdit)]
+public string Description { get; set; }
+
+7. ColumnName
+Pozwala określić własną nazwę kolumny.
+
+[GridView(
+    "Nazwa użytkownika",
+    columnName: "UserName")]
+public string Name { get; set; }
+
+Name jest tekstem nagłówka, natomiast ColumnName jest nazwą samej kolumny DataGridView.
+
+Jeżeli ColumnName nie zostanie podany, używana jest nazwa właściwości.
+
+8. Format
+Format określa sposób prezentowania wartości.
+
+Przykład:
+
+[GridView(
+    "Kwota",
+    format: "N2",
+    columnType: GridViewAttribute.EColumnType.Number)]
+public decimal Amount { get; set; }
+
+Data:
+
+[GridView(
+    "Data",
+    format: "yyyy-MM-dd",
+    columnType: GridViewAttribute.EColumnType.Date)]
+public DateTime Date { get; set; }
+
+Format zależy od typu danych i standardowych formatów .NET.
+
+9. GridProperty
+GridProperty jest główną klasą używaną podczas konfiguracji DataGridView.
+
+Konstruktor
+Podstawowa wersja:
+
+new GridProperty(dataGridView);
+
+Przykład:
+
+_gridProperty =
+    new GridProperty(dataGridView1);
+
+Jeżeli używane są CustomColumn, należy przekazać również ControlRenderHost:
+
+_controlRenderHost =
+    new ControlRenderHost();
+
+_gridProperty =
+    new GridProperty(
+        dataGridView1,
+        _controlRenderHost);
+
+10. InitData<T>()
+Najważniejsza metoda GridProperty.
+
+bool InitData<T>()
+    where T : class
+
+Konfiguruje DataGridView na podstawie właściwości modelu T oznaczonych GridViewAttribute.
+
+Przykład:
+
+bool initialized =
+    _gridProperty.InitData<Customer>();
+
+Najczęściej wystarczy:
+
+_gridProperty.InitData<Customer>();
+
+Metoda zwraca:
+
+true
+
+jeżeli konfiguracja została wykonana poprawnie.
+
+Jeżeli model nie zawiera żadnej właściwości z GridViewAttribute, metoda zwraca false i wyświetla komunikat.
+
+Błędy nieprawidłowej konfiguracji kolumn są zgłaszane jako wyjątki.
+
+11. GetAction<T>()
+Jeżeli model posiada kolumnę typu Button, akcję można pobrać przez:
+
+GridAction<T> GetAction<T>(string key)
+
+Przykład:
+
+GridAction<Customer> action =
+    _gridProperty.GetAction<Customer>("Edit");
+
+Najczęściej akcję pobiera się od razu podczas podpinania eventu:
+
+_gridProperty
+    .GetAction<Customer>("Edit")
+    .Click += Edit_Click;
+
+Nazwa "Edit" musi odpowiadać:
+
+actionName: "Edit"
+
+w GridViewAttribute.
+
+12. GridAction<T>
+GridAction<T> reprezentuje akcję przypisaną do przycisku.
+
+Najważniejszą publiczną właściwością jest:
+
+string Key
+
+Przykład:
+
+GridAction<Customer> action =
+    _gridProperty.GetAction<Customer>("Edit");
+
+string actionName = action.Key;
+
+13. GridAction<T>.Click
+Najważniejszym elementem GridAction<T> jest event:
+
+event EventHandler<GridActionEventArgs<T>> Click;
+
+Podpinanie:
+
+_gridProperty
+    .GetAction<Customer>("Edit")
+    .Click += Edit_Click;
+
+Handler:
+
+private void Edit_Click(
+    object sender,
+    GridActionEventArgs<Customer> e)
+{
+    Customer customer = e.Item;
+
+    // obsługa akcji
+}
+
+14. GridActionEventArgs<T>
+Argument zdarzenia akcji zawiera informacje o kliknięciu.
+
+Dostępne właściwości:
+
+T Item
+DataGridView Grid
+int RowIndex
+int ColumnIndex
+
+Item
+Najważniejsza właściwość.
+
+Zawiera konkretny obiekt modelu, dla którego kliknięto przycisk.
+
+Customer customer = e.Item;
+
+Dzięki temu nie trzeba ręcznie odczytywać wartości z komórek DataGridView.
+
+Grid
+Referencja do DataGridView:
+
+DataGridView grid = e.Grid;
+
+RowIndex
+Indeks klikniętego wiersza:
+
+int row = e.RowIndex;
+
+ColumnIndex
+Indeks klikniętej kolumny:
+
+int column = e.ColumnIndex;
+
+15. Przykład kompletnego użycia
+Poniższy przykład pokazuje typowy sposób użycia biblioteki.
+
+Model
+public class Product
+{
+    [GridView(
+        "ID",
+        columnType: GridViewAttribute.EColumnType.Number)]
+    public int Id { get; set; }
+
+    [GridView("Nazwa")]
+    public string Name { get; set; }
+
+    [GridView(
+        "Opis",
+        columnType: GridViewAttribute.EColumnType.MemoEdit)]
+    public string Description { get; set; }
+
+    [GridView(
+        "Cena",
+        columnType: GridViewAttribute.EColumnType.Number,
+        format: "N2")]
+    public decimal Price { get; set; }
+
+    [GridView(
+        "Aktywny",
+        columnType: GridViewAttribute.EColumnType.Boolean)]
+    public bool IsActive { get; set; }
+
+    [GridView(
+        "Data dodania",
+        columnType: GridViewAttribute.EColumnType.Date)]
+    public DateTime CreatedAt { get; set; }
+
+    [GridView(
+        "Edytuj",
+        columnType: GridViewAttribute.EColumnType.Button,
+        actionName: "Edit")]
+    public string Edit { get; set; }
+
+    [GridView(
+        "Usuń",
+        columnType: GridViewAttribute.EColumnType.Button,
+        actionName: "Delete")]
+    public string Delete { get; set; }
+
+    [GridView(
+        "Wartość techniczna",
+        visibility: false)]
+    public string TechnicalValue { get; set; }
+}
+
+Formularz
+public partial class Form1 : Form
+{
+    private readonly GridProperty _gridProperty;
+
+    private readonly List<Product> _products =
+        new List<Product>
+        {
+            new Product
+            {
+                Id = 1,
+                Name = "Produkt A",
+                Description = "Pierwszy produkt",
+                Price = 123.45m,
+                IsActive = true,
+                CreatedAt = DateTime.Now,
+                Edit = "Edytuj",
+                Delete = "Usuń"
+            },
+
+            new Product
+            {
+                Id = 2,
+                Name = "Produkt B",
+                Description = "Drugi produkt",
+                Price = 999.99m,
+                IsActive = false,
+                CreatedAt = DateTime.Now,
+                Edit = "Edytuj",
+                Delete = "Usuń"
+            }
+        };
+
+    public Form1()
+    {
+        InitializeComponent();
+
+        _gridProperty =
+            new GridProperty(dataGridView1);
+
+        InitializeGrid();
+    }
+
+    private void InitializeGrid()
+    {
+        _gridProperty.InitData<Product>();
+
+        _gridProperty
+            .GetAction<Product>("Edit")
+            .Click += Edit_Click;
+
+        _gridProperty
+            .GetAction<Product>("Delete")
+            .Click += Delete_Click;
+
+        dataGridView1.DataSource = _products;
+    }
+
+    private void Edit_Click(
+        object sender,
+        GridActionEventArgs<Product> e)
+    {
+        Product product = e.Item;
+
+        MessageBox.Show(
+            $"Edycja produktu: {product.Name}",
+            "Edycja",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information);
+    }
+
+    private void Delete_Click(
+        object sender,
+        GridActionEventArgs<Product> e)
+    {
+        Product product = e.Item;
+
+        MessageBox.Show(
+            $"Usuwanie produktu: {product.Name}",
+            "Usuwanie",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning);
+    }
+}
+
+16. Co dzieje się podczas działania przykładu?
+Dla właściwości:
+
+[GridView(
+    "Edytuj",
+    columnType: GridViewAttribute.EColumnType.Button,
+    actionName: "Edit")]
+public string Edit { get; set; }
+
+biblioteka tworzy przycisk.
+
+Następnie:
+
+_gridProperty
+    .GetAction<Product>("Edit")
+    .Click += Edit_Click;
+
+podłącza obsługę tego przycisku.
+
+Po kliknięciu:
+
+kliknięcie przycisku
+        ↓
+GridAction<Product>
+        ↓
+GridActionEventArgs<Product>
+        ↓
+Edit_Click(...)
+        ↓
+e.Item
+
+e.Item zawiera dokładnie ten Product, którego dotyczy kliknięcie.
+
+17. GridFilter
+Jeżeli projekt korzysta z klasy GridFilter, można ją utworzyć dla konkretnego DataGridView:
+
+private readonly GridFilter _gridFilter;
+
+public Form1()
+{
+    InitializeComponent();
+
+    _gridFilter =
+        new GridFilter(dataGridView1);
+}
+
+Następnie:
+
+_gridFilter.Enable();
+
+GridFilter jest opcjonalnym elementem biblioteki i nie jest wymagany do podstawowego działania GridProperty.
+
+18. CustomColumn
+CustomColumn służy do sytuacji, w których standardowe typy:
+
+Text
+Number
+Date
+Time
+DateTime
+Boolean
+Button
+Tooltip
+MemoEdit
+
+nie są wystarczające.
+
+Do korzystania z CustomColumn potrzebny jest:
+
+ControlRenderHost
+
+Przykład utworzenia:
+
+private readonly ControlRenderHost _controlRenderHost;
+private readonly GridProperty _gridProperty;
+
+public Form1()
+{
+    InitializeComponent();
+
+    _controlRenderHost =
+        new ControlRenderHost();
+
+    _gridProperty =
+        new GridProperty(
+            dataGridView1,
+            _controlRenderHost);
+}
+
+Szczegółowa implementacja własnej kolumny zależy od interfejsów i klas używanych przez konkretną aplikację.
+
+19. Zalecana kolejność inicjalizacji
+Najprostszy i zalecany schemat:
+
+public Form1()
+{
+    InitializeComponent();
+
+    _gridProperty =
+        new GridProperty(dataGridView1);
+
+    _gridProperty.InitData<Product>();
+
+    _gridProperty
+        .GetAction<Product>("Edit")
+        .Click += Edit_Click;
+
+    dataGridView1.DataSource = _products;
+}
+
+Czyli:
+
+1. Utwórz GridProperty
+2. Wywołaj InitData<T>()
+3. Podepnij akcje
+4. Ustaw DataSource
+
+20. Ważna uwaga dotycząca eventów
+Handler akcji należy podłączać tylko raz.
+
+Nie należy wykonywać wielokrotnie:
+
+_gridProperty
+    .GetAction<Product>("Edit")
+    .Click += Edit_Click;
+
+bez odpinania poprzedniego handlera.
+
+Jeżeli metoda inicjalizacyjna może być wywoływana wielokrotnie, należy uważać, aby nie doprowadzić do wielokrotnego wykonania tego samego handlera.
+
+21. Minimalny przykład
+Jeżeli potrzebna jest tylko prosta tabela z jednym przyciskiem:
+
+Model
+public class Person
+{
+    [GridView("Imię")]
+    public string Name { get; set; }
+
+    [GridView(
+        "Edytuj",
+        columnType: GridViewAttribute.EColumnType.Button,
+        actionName: "Edit")]
+    public string Edit { get; set; }
+}
+
+Formularz
+private GridProperty _gridProperty;
+
+public Form1()
+{
+    InitializeComponent();
+
+    _gridProperty =
+        new GridProperty(dataGridView1);
+
+    _gridProperty.InitData<Person>();
+
+    _gridProperty
+        .GetAction<Person>("Edit")
+        .Click += Edit_Click;
+
+    dataGridView1.DataSource =
+        new List<Person>
+        {
+            new Person
+            {
+                Name = "Jan",
+                Edit = "Edytuj"
+            },
+            new Person
+            {
+                Name = "Anna",
+                Edit = "Edytuj"
+            }
+        };
+}
+
+private void Edit_Click(
+    object sender,
+    GridActionEventArgs<Person> e)
+{
+    MessageBox.Show(
+        $"Wybrano: {e.Item.Name}");
+}
+
+To jest pełny minimalny scenariusz użycia biblioteki.
+
+22. Najważniejsze elementy API
+W codziennym użyciu biblioteki najczęściej potrzebne będą tylko:
+
+GridViewAttribute
+    ├── Name
+    ├── Ignore
+    ├── Visibility
+    ├── AllowEdit
+    ├── ColumnName
+    ├── Format
+    ├── ColumnType
+    └── ActionName
+
+GridProperty
+    ├── GridProperty(...)
+    ├── InitData<T>()
+    └── GetAction<T>()
+
+GridAction<T>
+    ├── Key
+    └── Click
+
+GridActionEventArgs<T>
+    ├── Item
+    ├── Grid
+    ├── RowIndex
+    └── ColumnIndex
+
+ControlRenderHost
+    └── potrzebny przy CustomColumn
+
+GridFilter
+    └── opcjonalne filtrowanie
+
+W typowym formularzu użytkownik biblioteki powinien więc móc ograniczyć kod konfiguracji do:
+
+_gridProperty.InitData<Product>();
+
+_gridProperty
+    .GetAction<Product>("Edit")
+    .Click += Edit_Click;
+
+dataGridView1.DataSource = products;
+
+a cała definicja wyglądu kolumn pozostaje przy modelu poprzez GridViewAttribute.
+
+To README jest celowo API/user-facing: pomija prywatne metody i mechanizmy implementacyjne, a dokumentuje tylko to, co programista korzystający z biblioteki powinien znać.

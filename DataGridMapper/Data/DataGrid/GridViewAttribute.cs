@@ -5,7 +5,7 @@ namespace MC.Data.DataGrid
     [AttributeUsage(AttributeTargets.Property)]
     public class GridViewAttribute : Attribute
     {
-        public enum eColumnType
+        public enum EColumnType
         {
             None,
             Text,
@@ -25,7 +25,7 @@ namespace MC.Data.DataGrid
         public bool Visibility { get; set; } = true;
         public bool AllowEdit { get; set; }
         public string ColumnName { get; set; }
-        public eColumnType ColumnType { get; set; }
+        public EColumnType ColumnType { get; set; }
         public string Format { get; set; }
         public Type CustomColumnType { get; set; }
 
@@ -38,7 +38,7 @@ namespace MC.Data.DataGrid
             bool allowEdit = false,
             string columnName = "",
             string format = "",
-            eColumnType columnType = eColumnType.None,
+            EColumnType columnType = EColumnType.None,
            string actionName = "")
         {
             Name = name;

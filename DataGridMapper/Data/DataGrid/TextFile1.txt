@@ -1,0 +1,921 @@
+﻿GridFilter
+GridFilter to komponent dla Windows Forms DataGridView, umożliwiający filtrowanie danych bezpośrednio z poziomu panelu filtrów umieszczonego nad tabelą.
+
+Komponent obsługuje źródła danych oparte zarówno o:
+
+IEnumerable<T>
+
+IQueryable<T>
+
+BindingSource
+
+zagnieżdżone BindingSource
+
+Filtrowanie jest realizowane za pomocą Expression Trees, dzięki czemu ten sam mechanizm może być wykorzystywany zarówno dla LINQ-to-Objects, jak i dla providerów LINQ obsługujących IQueryable.
+
+Spis treści
+Główne możliwości
+
+Architektura
+
+Przepływ filtrowania
+
+Podstawowe użycie
+
+Włączanie filtrowania
+
+Wyłączanie filtrowania
+
+Programowe ustawianie filtra
+
+Obsługiwane operatory
+
+Obsługiwane typy
+
+Filtrowanie wielu kolumn
+
+Obsługa BindingSource
+
+IEnumerable
+
+IQueryable
+
+Architektura komponentu
+
+Opis klas
+
+FilterExpressionBuilder
+
+Cykl życia GridFilter
+
+Ograniczenia
+
+Przykładowy model
+
+Przykład kompletnego użycia
+
+Rozszerzanie komponentu
+
+Główne możliwości
+GridFilter zapewnia:
+
+automatyczne utworzenie panelu filtrów nad DataGridView,
+
+osobny filtr dla każdej widocznej kolumny posiadającej DataPropertyName,
+
+automatyczne dobranie operatorów na podstawie typu właściwości,
+
+specjalny interfejs dla wartości bool,
+
+obsługę wielu filtrów jednocześnie,
+
+łączenie filtrów za pomocą logicznego AND,
+
+obsługę null,
+
+obsługę Nullable<T>,
+
+konwersję wartości tekstowych do odpowiednich typów CLR,
+
+filtrowanie IEnumerable<T>,
+
+filtrowanie IQueryable<T>,
+
+programowe ustawianie filtrów,
+
+możliwość przywrócenia oryginalnego źródła danych po wyłączeniu filtrowania.
+
+Architektura
+Główne elementy systemu:
+
+GridFilter
+    │
+    ▼
+FilterContext
+    │
+    ├── BindingSource
+    ├── FilterDefinition
+    ├── FilterEditor
+    └── IDataSourceAdapter
+              │
+              ├── EnumerableDataSourceAdapter<T>
+              │
+              └── QueryableDataSourceAdapter<T>
+                          │
+                          ▼
+                FilterExpressionBuilder
+                          │
+                          ▼
+                Expression<Func<T, bool>>
+
+Warstwy
+GridFilter
+Główna klasa komponentu.
+
+Odpowiada za:
+
+integrację z DataGridView,
+
+tworzenie panelu filtrów,
+
+tworzenie kontrolek,
+
+obsługę zmian w UI,
+
+zarządzanie BindingSource,
+
+przechowywanie aktywnych filtrów,
+
+uruchamianie filtrowania.
+
+FilterContext
+Przechowuje stan konkretnej instancji filtra.
+
+Zawiera m.in.:
+
+DataGridView Grid
+BindingSource BindingSource
+object OriginalDataSource
+IDataSourceAdapter DataSource
+Panel FilterPanel
+Dictionary<string, FilterDefinition> Filters
+Dictionary<int, FilterEditor> Controls
+
+FilterDefinition
+Reprezentuje pojedynczy filtr:
+
+PropertyName
+Operator
+Value
+
+Przykład:
+
+new FilterDefinition(
+    "Age",
+    FilterOperator.GreaterThan,
+    18);
+
+FilterExpressionBuilder
+Konwertuje definicje filtrów na:
+
+Expression<Func<T, bool>>
+
+Przykład:
+
+Age > 18
+
+jest reprezentowane jako:
+
+x => x.Age > 18
+
+IDataSourceAdapter
+Abstrakcja nad źródłem danych:
+
+public interface IDataSourceAdapter
+{
+    Type ItemType { get; }
+
+    object ApplyFilters(
+        IReadOnlyCollection<FilterDefinition> filters);
+}
+
+Dzięki temu GridFilter nie musi wiedzieć, czy filtruje kolekcję w pamięci, czy zapytanie IQueryable.
+
+Przepływ filtrowania
+Dla przykładowego filtra:
+
+Age > 18
+
+przepływ wygląda następująco:
+
+TextBox
+   │
+   ▼
+FilterDefinition
+   │
+   │ PropertyName = "Age"
+   │ Operator     = GreaterThan
+   │ Value        = "18"
+   │
+   ▼
+FilterExpressionBuilder
+   │
+   ▼
+x => x.Age > 18
+   │
+   ├── IEnumerable<T>
+   │       ↓
+   │   Compile()
+   │       ↓
+   │   Enumerable.Where()
+   │
+   └── IQueryable<T>
+           ↓
+       Queryable.Where()
+           ↓
+       LINQ Provider
+
+Podstawowe użycie
+Najprostsze użycie:
+
+var filter = new GridFilter(dataGridView);
+
+filter.Enable();
+
+Jeżeli DataGridView posiada poprawne źródło danych, komponent utworzy panel filtrów.
+
+Przykład:
+
+dataGridView1.DataSource = customers;
+
+var filter = new GridFilter(dataGridView1);
+
+filter.Enable();
+
+Włączanie filtrowania
+Metoda:
+
+public bool Enable()
+
+zwraca:
+
+true — jeżeli filtrowanie zostało uruchomione,
+
+false — jeżeli nie udało się uruchomić komponentu.
+
+Przykład:
+
+if (!filter.Enable())
+{
+    MessageBox.Show("Nie udało się uruchomić filtrowania.");
+}
+
+Wymagania
+DataGridView musi posiadać:
+
+DataSource,
+
+Parent.
+
+Przykład niepoprawny:
+
+var grid = new DataGridView();
+
+var filter = new GridFilter(grid);
+
+filter.Enable();
+
+W tym przypadku źródło danych nie istnieje.
+
+Wyłączanie filtrowania
+Filtrowanie można wyłączyć:
+
+filter.Disable();
+
+Disable():
+
+odłącza zdarzenia,
+
+usuwa panel filtrów,
+
+przywraca oryginalne źródło danych,
+
+przywraca stan BindingSource.
+
+Przykład:
+
+filter.Enable();
+
+// ...
+
+filter.Disable();
+
+Programowe ustawianie filtra
+Filtr można ustawić również bez korzystania z UI:
+
+filter.SetFilter(
+    "Age",
+    FilterOperator.GreaterThan,
+    18);
+
+Przykład:
+
+filter.SetFilter(
+    "Name",
+    FilterOperator.Contains,
+    "Jan");
+
+Można ustawić kilka filtrów:
+
+filter.SetFilter(
+    "Name",
+    FilterOperator.Contains,
+    "Jan");
+
+filter.SetFilter(
+    "Age",
+    FilterOperator.GreaterThanOrEqual,
+    18);
+
+Ostateczne zapytanie logicznie odpowiada:
+
+Name.Contains("Jan")
+AND
+Age >= 18
+
+Obsługiwane operatory
+Dostępne są:
+
+Operator	Znaczenie	Przykład
+Equals	równa się	Age == 18
+NotEquals	różne od	Age != 18
+Contains	zawiera tekst	Name.Contains("Jan")
+StartsWith	zaczyna się od	Name.StartsWith("Jan")
+EndsWith	kończy się na	Name.EndsWith("ski")
+GreaterThan	większe niż	Age > 18
+GreaterThanOrEqual	większe lub równe	Age >= 18
+LessThan	mniejsze niż	Age < 18
+LessThanOrEqual	mniejsze lub równe	Age <= 18
+IsNull	wartość null	Name == null
+IsNotNull	wartość różna od null	Name != null
+
+Obsługiwane typy
+Automatycznie rozpoznawane są m.in.:
+
+string
+bool
+bool?
+byte
+short
+int
+long
+float
+double
+decimal
+DateTime
+DateTime?
+Guid
+enum
+Nullable<T>
+
+Operatorzy są dobierani na podstawie typu właściwości.
+
+String
+Dla string dostępne są:
+
+zawiera
+zaczyna się od
+kończy się na
+==
+!=
+is null
+is not null
+
+Domyślnym operatorem jest:
+
+zawiera
+
+Typy liczbowe
+Dla typów liczbowych:
+
+==
+!=
+>
+>=
+<
+<=
+is null
+is not null
+
+is null i is not null mają zastosowanie dla nullable typów liczbowych.
+
+DateTime
+Dostępne są:
+
+==
+!=
+>
+>=
+<
+<=
+is null
+is not null
+
+Boolean
+Dla bool wykorzystywany jest specjalny ComboBox:
+
+Wszystkie
+Tak
+Nie
+
+Filtrowanie wielu kolumn
+Aktywne filtry są łączone przez:
+
+AND
+
+Przykład:
+
+filter.SetFilter(
+    "Name",
+    FilterOperator.Contains,
+    "Jan");
+
+filter.SetFilter(
+    "Age",
+    FilterOperator.GreaterThan,
+    18);
+
+Logicznie:
+
+Name contains "Jan"
+AND
+Age > 18
+
+W FilterExpressionBuilder realizowane jest to przez:
+
+Expression.AndAlso(...)
+
+Obsługa BindingSource
+GridFilter może pracować zarówno z bezpośrednim źródłem:
+
+dataGridView.DataSource = customers;
+
+jak i z:
+
+var bindingSource = new BindingSource();
+
+bindingSource.DataSource = customers;
+
+dataGridView.DataSource = bindingSource;
+
+Obsługiwane są również zagnieżdżone BindingSource:
+
+BindingSource
+    ↓
+BindingSource
+        ↓
+BindingSource
+            ↓
+List<Customer>
+
+BindingSourceResolver schodzi po kolejnych warstwach aż do właściwego źródła danych.
+
+IEnumerable
+Dla źródła:
+
+List<Customer>
+
+wykorzystywany jest:
+
+EnumerableDataSourceAdapter<Customer>
+
+Przykład:
+
+var customers = new List<Customer>
+{
+    new Customer
+    {
+        Name = "Jan Kowalski",
+        Age = 30
+    },
+    new Customer
+    {
+        Name = "Anna Nowak",
+        Age = 17
+    }
+};
+
+dataGridView1.DataSource = customers;
+
+var filter = new GridFilter(dataGridView1);
+
+filter.Enable();
+
+filter.SetFilter(
+    "Age",
+    FilterOperator.GreaterThanOrEqual,
+    18);
+
+Adapter wykorzystuje LINQ-to-Objects:
+
+_source.Where(predicate);
+
+IQueryable
+Dla źródła:
+
+IQueryable<T>
+
+wykorzystywany jest:
+
+QueryableDataSourceAdapter<T>
+
+Adapter nie kompiluje expression przez:
+
+Compile()
+
+Zamiast tego przekazuje expression bezpośrednio do:
+
+Queryable.Where(...)
+
+Przykład:
+
+IQueryable<Customer> query =
+    dbContext.Customers;
+
+dataGridView1.DataSource = query;
+
+var filter = new GridFilter(dataGridView1);
+
+filter.Enable();
+
+filter.SetFilter(
+    "Age",
+    FilterOperator.GreaterThan,
+    18);
+
+W przypadku providerów takich jak Entity Framework expression może zostać przetłumaczone na zapytanie wykonywane po stronie źródła danych.
+
+Architektura komponentu
+DataSourceAdapterFactory
+Fabryka wybiera właściwy adapter:
+
+IQueryable
+    ↓
+QueryableDataSourceAdapter<T>
+
+IEnumerable
+    ↓
+EnumerableDataSourceAdapter<T>
+
+IQueryable jest sprawdzane przed IEnumerable, ponieważ IQueryable<T> implementuje również IEnumerable<T>.
+
+BindingSourceResolver
+Odpowiada za odnalezienie rzeczywistego źródła danych:
+
+BindingSource
+    ↓
+BindingSource
+    ↓
+List<T>
+
+Metoda:
+
+BindingSourceResolver.Resolve(...)
+
+zwraca końcowe źródło danych.
+
+FilterContext
+FilterContext przechowuje stan jednej instancji GridFilter.
+
+Najważniejsze elementy:
+
+public DataGridView Grid { get; set; }
+
+public BindingSource BindingSource { get; set; }
+
+public object OriginalDataSource { get; set; }
+
+public IDataSourceAdapter DataSource { get; set; }
+
+public Panel FilterPanel { get; set; }
+
+public Dictionary<string, FilterDefinition> Filters { get; }
+
+FilterExpressionBuilder
+FilterExpressionBuilder generuje:
+
+Expression<Func<T, bool>>
+
+Przykład:
+
+new FilterDefinition(
+    "Age",
+    FilterOperator.GreaterThan,
+    18)
+
+generuje logicznie:
+
+x => x.Age > 18
+
+Dwa filtry:
+
+Age > 18
+
+oraz:
+
+Name.Contains("Jan")
+
+generują:
+
+x =>
+    x.Age > 18 &&
+    x.Name.Contains("Jan")
+
+Konwersja wartości
+FilterExpressionBuilder konwertuje wartość przekazaną przez FilterDefinition do typu właściwości.
+
+Obsługiwane są specjalnie:
+
+Nullable<T>
+enum
+Guid
+
+oraz pozostałe typy obsługiwane przez:
+
+Convert.ChangeType(...)
+
+Przykład:
+
+new FilterDefinition(
+    "Age",
+    FilterOperator.GreaterThan,
+    "18")
+
+może zostać przekształcony do:
+
+18
+
+dla właściwości:
+
+int Age
+
+Null handling
+Operatory:
+
+IsNull
+IsNotNull
+
+mogą być stosowane do typów nullable.
+
+Dla string:
+
+x.Name == null
+
+jest obsługiwane bezpiecznie.
+
+Dla:
+
+string.Contains(...)
+string.StartsWith(...)
+string.EndsWith(...)
+
+builder generuje również sprawdzenie:
+
+x.Name != null
+
+dzięki czemu filtrowanie LINQ-to-Objects nie powoduje NullReferenceException dla wartości null.
+
+Cykl życia GridFilter
+Typowy cykl życia wygląda następująco:
+
+new GridFilter(grid)
+        │
+        ▼
+      Enable()
+        │
+        ├── pobranie DataSource
+        ├── utworzenie BindingSource
+        ├── utworzenie FilterContext
+        ├── utworzenie panelu
+        ├── utworzenie kontrolek
+        └── podpięcie zdarzeń
+        │
+        ▼
+   użytkownik filtruje
+        │
+        ▼
+ FilterDefinition
+        │
+        ▼
+ ApplyFilter()
+        │
+        ▼
+ IDataSourceAdapter
+        │
+        ▼
+ wynik filtrowania
+        │
+        ▼
+ BindingSource
+        │
+        ▼
+ DataGridView
+        │
+        ▼
+     Disable()
+
+Ograniczenia
+Obecna implementacja ma kilka ograniczeń, które należy mieć na uwadze.
+
+Nested properties
+Bez dodatkowego resolvera nie są obsługiwane ścieżki typu:
+
+Customer.Address.City
+
+Obecny mechanizm korzysta z:
+
+Expression.PropertyOrField(...)
+
+dla pojedynczej nazwy właściwości.
+
+DateTime
+Porównanie:
+
+DateTime == wartość
+
+jest porównaniem pełnej wartości DateTime, włącznie z godziną, minutą, sekundą i częścią ułamkową.
+
+Przykładowo:
+
+2026-09-24 14:30
+
+nie jest równe:
+
+2026-09-24 00:00
+
+Jeżeli filtr ma traktować wpisaną datę jako cały dzień, należy wprowadzić osobną semantykę dla tego przypadku.
+
+Enum
+Enum jest obsługiwany przez FilterExpressionBuilder, ale obecny edytor wartości wykorzystuje TextBox.
+
+Przykładowo:
+
+Status.Active
+
+może być podany tekstowo jako:
+
+Active
+
+Walidacja wartości
+Wartości wpisywane ręcznie w TextBox mogą powodować wyjątek konwersji, jeśli nie odpowiadają typowi właściwości.
+
+Przykład:
+
+Age > abc
+
+dla:
+
+int Age
+
+W przyszłości warto dodać dedykowaną walidację wartości przed wykonaniem filtra.
+
+Przykładowy model
+public class Customer
+{
+    public int Id { get; set; }
+
+    public string Name { get; set; }
+
+    public int Age { get; set; }
+
+    public decimal Balance { get; set; }
+
+    public DateTime CreatedAt { get; set; }
+
+    public bool IsActive { get; set; }
+
+    public Guid ExternalId { get; set; }
+}
+
+Przykład kompletnego użycia
+private GridFilter _gridFilter;
+
+private void Form_Load(
+    object sender,
+    EventArgs e)
+{
+    var customers =
+        GetCustomers();
+
+    dataGridView1.AutoGenerateColumns = true;
+
+    dataGridView1.DataSource =
+        customers;
+
+    _gridFilter =
+        new GridFilter(
+            dataGridView1);
+
+    _gridFilter.FilterPanelHeight = 30;
+
+    if (!_gridFilter.Enable())
+    {
+        return;
+    }
+}
+
+Programowe filtrowanie:
+
+_gridFilter.SetFilter(
+    "Name",
+    FilterOperator.Contains,
+    "Jan");
+
+_gridFilter.SetFilter(
+    "Age",
+    FilterOperator.GreaterThanOrEqual,
+    18);
+
+Wyłączenie:
+
+_gridFilter.Disable();
+
+Rozszerzanie komponentu
+Architektura została zaprojektowana tak, aby można było dodawać kolejne możliwości bez zmiany podstawowego mechanizmu.
+
+Nowy operator
+Dodaj wartość do:
+
+FilterOperator
+
+następnie dodaj obsługę w:
+
+FilterExpressionBuilder.BuildComparison(...)
+
+oraz odpowiedni operator w:
+
+GridFilter.CreateOperatorComboBox(...)
+
+Nowy typ danych
+Dla nowego typu należy uwzględnić:
+
+rozpoznanie typu w GridFilter,
+
+dostępne operatory,
+
+konwersję wartości,
+
+generowanie expression.
+
+Nowy rodzaj źródła danych
+Należy zaimplementować:
+
+IDataSourceAdapter
+
+następnie dodać jego wybór w:
+
+DataSourceAdapterFactory
+
+Dzięki temu GridFilter pozostaje niezależny od konkretnego źródła danych.
+
+Zalecany kierunek dalszego rozwoju
+Przy dalszym rozwoju komponentu warto rozważyć:
+
+dedykowany FilterValueConverter,
+
+walidację wartości przed wykonaniem filtra,
+
+DateTimePicker dla właściwości DateTime,
+
+ComboBox dla enumów,
+
+obsługę Nullable<T> w UI,
+
+debounce dla TextChanged,
+
+obsługę zagnieżdżonych właściwości,
+
+możliwość czyszczenia wszystkich filtrów,
+
+synchronizację SetFilter() z kontrolkami UI,
+
+obsługę dynamicznie dodawanych i usuwanych kolumn,
+
+obsługę widoczności kolumn,
+
+dodatkowe operatory, np. Between, In i NotIn.
+
+Podsumowanie
+GridFilter został podzielony na kilka niezależnych warstw:
+
+┌──────────────────────────────┐
+│          GridFilter          │
+│       WinForms / UI          │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│        FilterContext         │
+│          State               │
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│      FilterDefinition        │
+│   Property / Operator / Value│
+└──────────────┬───────────────┘
+               │
+               ▼
+┌──────────────────────────────┐
+│   FilterExpressionBuilder    │
+│       Expression Tree        │
+└──────────────┬───────────────┘
+               │
+        ┌──────┴──────┐
+        ▼             ▼
+┌─────────────┐ ┌──────────────┐
+│ IEnumerable │ │ IQueryable   │
+│   Adapter   │ │   Adapter    │
+└─────────────┘ └──────────────┘
+
+Najważniejszą cechą rozwiązania jest oddzielenie UI, definicji filtrów, budowania expression oraz wykonania zapytania. Dzięki temu ten sam mechanizm filtrujący może być wykorzystany zarówno dla danych znajdujących się w pamięci, jak i dla źródeł IQueryable.
