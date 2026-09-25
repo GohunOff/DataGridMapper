@@ -1,12 +1,7 @@
 ﻿using MC.Data.DataGrid.Filter;
 using System;
-using System.Collections.Generic;
-using System.ComponentModel;
 using System.Drawing;
 using System.Linq;
-using System.Runtime.Remoting.Contexts;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace MC.Data.DataGrid
@@ -193,6 +188,17 @@ namespace MC.Data.DataGrid
                     continue;
                 }
 
+                if (editor.IsEnum)
+                {
+                    editor.EnumComboBox.SetBounds(
+                        rectangle.X,
+                        3,
+                        width,
+                        height);
+
+                    continue;
+                }
+
                 int operatorWidth =
                     Math.Min(
                         70,
@@ -264,20 +270,18 @@ namespace MC.Data.DataGrid
 
         private FilterEditor CreateFilterEditor(
     FilterContext context,
-    string propertyName)
+    GridPropertyMetadata metadata)
         {
-            PropertyDescriptor property =
-                GetPropertyDescriptor(
-                    context.BindingSource,
-                    propertyName);
-
-            if (property == null)
+            if (metadata == null)
                 return null;
+
+            string propertyName =
+                metadata.PropertyName;
 
             Type type =
                 Nullable.GetUnderlyingType(
-                    property.PropertyType)
-                ?? property.PropertyType;
+                    metadata.PropertyType)
+                ?? metadata.PropertyType;
 
             // BOOL
             if (type == typeof(bool))
@@ -296,7 +300,39 @@ namespace MC.Data.DataGrid
                 comboBox.SelectedIndex = 0;
 
                 FilterEditor editor =
-                    new FilterEditor(
+                    FilterEditor.CreateBoolean(
+                        propertyName,
+                        comboBox);
+
+                comboBox.Tag = editor;
+
+                comboBox.SelectedIndexChanged +=
+                    FilterControlChanged;
+
+                return editor;
+            }
+
+            // ENUM
+            if (type.IsEnum)
+            {
+                ComboBox comboBox =
+                    new ComboBox
+                    {
+                        DropDownStyle =
+                            ComboBoxStyle.DropDownList
+                    };
+
+                comboBox.Items.Add("Wszystkie");
+
+                foreach (object value in Enum.GetValues(type))
+                {
+                    comboBox.Items.Add(value);
+                }
+
+                comboBox.SelectedIndex = 0;
+
+                FilterEditor editor =
+                    FilterEditor.CreateEnum(
                         propertyName,
                         comboBox);
 
@@ -312,7 +348,7 @@ namespace MC.Data.DataGrid
 
             ComboBox operatorComboBox =
                 CreateOperatorComboBox(
-                    property.PropertyType);
+                    metadata.PropertyType);
 
             TextBox valueTextBox =
                 new TextBox
@@ -322,7 +358,7 @@ namespace MC.Data.DataGrid
                 };
 
             FilterEditor filterEditor =
-                new FilterEditor(
+                FilterEditor.CreateText(
                     propertyName,
                     operatorComboBox,
                     valueTextBox);
@@ -336,11 +372,42 @@ namespace MC.Data.DataGrid
             operatorComboBox.SelectedIndexChanged +=
                 FilterControlChanged;
 
-            valueTextBox.TextChanged +=
-                FilterControlChanged;
+            AttachValueChangedEvent(
+                valueTextBox,
+                type);
 
             return filterEditor;
         }
+
+
+        private void AttachValueChangedEvent(
+            TextBox textBox,
+            Type type)
+        {
+            if (textBox == null)
+                throw new ArgumentNullException("textBox");
+
+            if (type == null)
+                throw new ArgumentNullException("type");
+
+            type =
+                Nullable.GetUnderlyingType(type)
+                ?? type;
+
+            if (type == typeof(DateTime)
+                        ||
+                type == typeof(TimeSpan))
+            {
+                textBox.Leave +=
+                    FilterControlChanged;
+            }
+            else
+            {
+                textBox.TextChanged +=
+                    FilterControlChanged;
+            }
+        }
+
 
         private void CreateControls(
     FilterContext context)
@@ -351,19 +418,25 @@ namespace MC.Data.DataGrid
             Panel panel =
                 context.FilterPanel;
 
-            foreach (DataGridViewColumn column in grid.Columns)
+            foreach (DataGridViewColumn column
+                in grid.Columns)
             {
                 if (!column.Visible)
                     continue;
 
-                if (string.IsNullOrWhiteSpace(
-                    column.DataPropertyName))
+                GridPropertyMetadata metadata =
+                    GetColumnMetadata(column);
+
+                if (metadata == null)
+                    continue;
+
+                if (metadata.Ignore)
                     continue;
 
                 FilterEditor editor =
                     CreateFilterEditor(
                         context,
-                        column.DataPropertyName);
+                        metadata);
 
                 if (editor == null)
                     continue;
@@ -372,6 +445,11 @@ namespace MC.Data.DataGrid
                 {
                     panel.Controls.Add(
                         editor.BooleanComboBox);
+                }
+                else if (editor.IsEnum)
+                {
+                    panel.Controls.Add(
+                        editor.EnumComboBox);
                 }
                 else
                 {
@@ -393,24 +471,11 @@ namespace MC.Data.DataGrid
 
 
 
-        private PropertyDescriptor GetPropertyDescriptor(
-           BindingSource source,
-           string propertyName)
+        private GridPropertyMetadata GetColumnMetadata(
+    DataGridViewColumn column)
         {
-            if (source == null)
-                return null;
-
-            PropertyDescriptorCollection properties =
-                source.GetItemProperties(null);
-
-            if (properties == null)
-                return null;
-
-            return properties.Find(
-                propertyName,
-                true);
+            return column?.Tag as GridPropertyMetadata;
         }
-
 
         private void FilterControlChanged(
     object sender,
@@ -437,11 +502,19 @@ namespace MC.Data.DataGrid
             string propertyName =
                 editor.PropertyName;
 
+            GridPropertyMetadata metadata =
+                FindColumnMetadata(
+                    context.Grid,
+                    propertyName);
+
+            if (metadata == null)
+                return;
+
             FilterDefinition filter =
                 CreateFilterDefinition(
                     context,
                     editor,
-                    propertyName);
+                    metadata);
 
             if (filter == null)
             {
@@ -458,17 +531,102 @@ namespace MC.Data.DataGrid
         }
 
 
+        private bool TryConvertFilterValue(
+    Type propertyType,
+    string textValue,
+    out object value)
+        {
+            value = null;
+
+            propertyType =
+                Nullable.GetUnderlyingType(propertyType)
+                ?? propertyType;
+
+            if (string.IsNullOrWhiteSpace(textValue))
+                return false;
+
+            if (propertyType == typeof(DateTime))
+            {
+                DateTime dateValue;
+
+                if (!DateTime.TryParseExact(
+                        textValue,
+                        "dd.MM.yyyy",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.DateTimeStyles.None,
+                        out dateValue))
+                {
+                    return false;
+                }
+
+                value = dateValue;
+                return true;
+            }
+
+            if (propertyType == typeof(TimeSpan))
+            {
+                TimeSpan timeValue;
+
+                if (!TimeSpan.TryParseExact(
+                        textValue,
+                        @"hh\:mm\:ss",
+                        System.Globalization.CultureInfo.InvariantCulture,
+                        System.Globalization.TimeSpanStyles.None,
+                        out timeValue))
+                {
+                    return false;
+                }
+
+                value = timeValue;
+                return true;
+            }
+
+            value = textValue;
+            return true;
+        }
+
+        private GridPropertyMetadata FindColumnMetadata(
+            DataGridView grid,
+            string propertyName)
+        {
+            if (grid == null ||
+                string.IsNullOrWhiteSpace(propertyName))
+            {
+                return null;
+            }
+
+            foreach (DataGridViewColumn column in grid.Columns)
+            {
+                if (!string.Equals(
+                        column.DataPropertyName,
+                        propertyName,
+                        StringComparison.OrdinalIgnoreCase))
+                {
+                    continue;
+                }
+
+                return GetColumnMetadata(column);
+            }
+
+            return null;
+        }
 
         private FilterDefinition CreateFilterDefinition(
     FilterContext context,
     FilterEditor editor,
-    string propertyName)
+    GridPropertyMetadata metadata)
         {
             if (context == null)
                 throw new ArgumentNullException("context");
 
             if (editor == null)
                 throw new ArgumentNullException("editor");
+
+            if (metadata == null)
+                return null;
+
+            string propertyName =
+                metadata.PropertyName;
 
             if (string.IsNullOrWhiteSpace(propertyName))
                 return null;
@@ -489,6 +647,27 @@ namespace MC.Data.DataGrid
                     propertyName,
                     FilterOperator.Equals,
                     boolValue);
+            }
+
+            // ENUM
+            if (editor.IsEnum)
+            {
+                if (editor.EnumComboBox == null)
+                    return null;
+
+                if (editor.EnumComboBox.SelectedIndex <= 0)
+                    return null;
+
+                object selectedValue =
+                    editor.EnumComboBox.SelectedItem;
+
+                if (selectedValue == null)
+                    return null;
+
+                return new FilterDefinition(
+                    propertyName,
+                    FilterOperator.Equals,
+                    selectedValue);
             }
 
             // POZOSTAŁE TYPY
@@ -519,18 +698,43 @@ namespace MC.Data.DataGrid
                     null);
             }
 
+            if (editor.ValueTextBox == null)
+                return null;
+
             string textValue =
                 editor.ValueTextBox.Text.Trim();
 
             if (string.IsNullOrWhiteSpace(textValue))
                 return null;
 
+            Type propertyType =
+                Nullable.GetUnderlyingType(
+                    metadata.PropertyType)
+                ?? metadata.PropertyType;
+
+            object value;
+
+            if (propertyType == typeof(DateTime) ||
+                propertyType == typeof(TimeSpan))
+            {
+                if (!TryConvertFilterValue(
+                        propertyType,
+                        textValue,
+                        out value))
+                {
+                    return null;
+                }
+            }
+            else
+            {
+                value = textValue;
+            }
+
             return new FilterDefinition(
                 propertyName,
                 filterOperator,
-                textValue);
+                value);
         }
-
 
 
         public void Disable()
@@ -596,7 +800,7 @@ namespace MC.Data.DataGrid
 
 
         private ComboBox CreateOperatorComboBox(
-    Type propertyType)
+            Type propertyType)
         {
             ComboBox comboBox =
                 new ComboBox
@@ -668,8 +872,8 @@ namespace MC.Data.DataGrid
                     FilterOperator.IsNotNull,
                     "is not null");
             }
-            else if (IsNumericType(type) ||
-                     type == typeof(DateTime))
+            else if (type == typeof(DateTime) ||
+            type == typeof(TimeSpan))
             {
                 AddOperator(
                     comboBox,
@@ -700,16 +904,38 @@ namespace MC.Data.DataGrid
                     comboBox,
                     FilterOperator.LessThanOrEqual,
                     "<=");
+            }
+            else if (IsNumericType(type))
+            {
+                AddOperator(
+                    comboBox,
+                    FilterOperator.Equals,
+                    "==");
 
                 AddOperator(
                     comboBox,
-                    FilterOperator.IsNull,
-                    "is null");
+                    FilterOperator.NotEquals,
+                    "!=");
 
                 AddOperator(
                     comboBox,
-                    FilterOperator.IsNotNull,
-                    "is not null");
+                    FilterOperator.GreaterThan,
+                    ">");
+
+                AddOperator(
+                    comboBox,
+                    FilterOperator.GreaterThanOrEqual,
+                    ">=");
+
+                AddOperator(
+                    comboBox,
+                    FilterOperator.LessThan,
+                    "<");
+
+                AddOperator(
+                    comboBox,
+                    FilterOperator.LessThanOrEqual,
+                    "<=");
             }
             else
             {

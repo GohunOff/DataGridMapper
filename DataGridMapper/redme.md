@@ -1,11 +1,9 @@
-﻿MC.Data.DataGrid
+﻿# MC.Data.DataGrid
+
 MC.Data.DataGrid to biblioteka rozszerzająca standardowy WinForms DataGridView o trzy główne obszary funkcjonalności:
-
-GridProperty — deklaratywna konfiguracja kolumn na podstawie atrybutów modelu oraz obsługa akcji dla kolumn typu Button.
-
-GridFilter — filtrowanie danych bezpośrednio powiązane z DataGridView, obsługujące zarówno źródła IEnumerable, jak i IQueryable.
-
-CustomColumn — możliwość wyświetlania złożonych widoków WinForms jako zawartości pojedynczej komórki, z renderowaniem do Bitmap i pamięciowym cache LRU.
+- GridProperty — deklaratywna konfiguracja kolumn na podstawie atrybutów modelu oraz obsługa akcji dla kolumn typu Button.
+- GridFilter — filtrowanie danych bezpośrednio powiązane z DataGridView, obsługujące zarówno źródła IEnumerable, jak i IQueryable.
+- CustomColumn — możliwość wyświetlania złożonych widoków WinForms jako zawartości pojedynczej komórki, z renderowaniem do Bitmap i pamięciowym cache LRU.
 
 Biblioteka została zaprojektowana tak, aby standardowy scenariusz użycia był prosty:
 
@@ -25,27 +23,21 @@ Biblioteka została zaprojektowana tak, aby standardowy scenariusz użycia był 
                                 ▼
                          DataGridView
 
-1. Trzy główne elementy biblioteki
-1.1. GridProperty
+## 1. Trzy główne elementy biblioteki
+
+### 1.1. GridProperty
+
 GridProperty odpowiada za konfigurację DataGridView na podstawie modelu danych.
 
 Pozwala między innymi:
-
-definiować kolumny za pomocą GridViewAttribute,
-
-określać nazwy i widoczność kolumn,
-
-definiować typ kolumny,
-
-określać formatowanie,
-
-włączać edycję,
-
-tworzyć kolumny przycisków,
-
-obsługiwać akcje GridAction<T>,
-
-korzystać z CustomColumn.
+- definiować kolumny za pomocą GridViewAttribute,
+- określać nazwy i widoczność kolumn,
+- definiować typ kolumny,
+- określać formatowanie,
+- włączać edycję,
+- tworzyć kolumny przycisków,
+- obsługiwać akcje GridAction<T>,
+- korzystać z CustomColumn.
 
 Typowy przepływ:
 

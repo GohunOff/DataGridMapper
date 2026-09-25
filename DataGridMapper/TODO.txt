@@ -1,0 +1,1031 @@
+﻿Tak. To jest moim zdaniem najważniejszy kierunek rozwoju architektury MC.Data.DataGrid.
+
+Obecnie GridProperty, GridFilter i CustomColumn rozwiązują swoje problemy osobno, ale wszystkie w praktyce potrzebują tej samej informacji:
+
+„Co wiadomo o właściwości modelu i jak DataGrid ma ją traktować?”
+
+Warto więc wprowadzić osobną warstwę metadata, która stanie się wspólnym źródłem prawdy.
+
+1. Problem obecnej architektury
+Dzisiaj informacje o właściwości są rozproszone.
+
+Przykładowo:
+
+[GridView(
+    "Cena",
+    format: "N2",
+    columnType: GridViewAttribute.EColumnType.Number)]
+public decimal Price { get; set; }
+
+GridProperty interpretuje ten atrybut.
+
+Natomiast GridFilter niezależnie dostaje:
+
+new FilterDefinition(
+    "Price",
+    FilterOperator.GreaterThan,
+    100m);
+
+i sam próbuje ustalić:
+
+Price
+ ↓
+PropertyInfo?
+ ↓
+Type?
+ ↓
+Nullable?
+ ↓
+Enum?
+ ↓
+string?
+
+A CustomColumn ma jeszcze własne informacje dotyczące:
+
+TData
+TView
+Id
+cache
+renderowanie
+
+Czyli obecnie kilka części biblioteki osobno odkrywa właściwości modelu.
+
+To jest dobre na początku projektu, ale wraz z rozwojem biblioteki zaczyna powodować duplikację logiki.
+
+2. Proponowana architektura
+Wprowadziłbym warstwę:
+
+MC.Data.DataGrid
+│
+├── Metadata
+│   ├── PropertyMetadata
+│   ├── TypeMetadata
+│   ├── MetadataProvider
+│   ├── MetadataCache
+│   └── ...
+│
+├── GridProperty
+│
+├── GridFilter
+│
+├── CustomColumn
+│
+└── Infrastructure
+
+I najważniejsze:
+
+                    Model
+                      │
+                      ▼
+               MetadataProvider
+                      │
+                      ▼
+              TypeMetadata
+                      │
+          ┌───────────┼───────────┐
+          │           │           │
+          ▼           ▼           ▼
+    GridProperty  GridFilter  CustomColumn
+
+Czyli metadata staje się wspólną warstwą pomiędzy modelem a funkcjonalnościami biblioteki.
+
+3. PropertyMetadata
+Zacząłbym od najważniejszej klasy.
+
+public sealed class PropertyMetadata
+{
+    public PropertyInfo Property { get; }
+
+    public string Name
+    {
+        get { return Property.Name; }
+    }
+
+    public Type PropertyType
+    {
+        get { return Property.PropertyType; }
+    }
+
+    public Type UnderlyingType
+    {
+        get
+        {
+            return Nullable.GetUnderlyingType(PropertyType)
+                ?? PropertyType;
+        }
+    }
+
+    public bool IsNullable
+    {
+        get
+        {
+            return !PropertyType.IsValueType
+                || Nullable.GetUnderlyingType(PropertyType) != null;
+        }
+    }
+
+    public bool IsEnum
+    {
+        get { return UnderlyingType.IsEnum; }
+    }
+
+    public bool IsString
+    {
+        get { return UnderlyingType == typeof(string); }
+    }
+
+    public bool IsBoolean
+    {
+        get { return UnderlyingType == typeof(bool); }
+    }
+
+    public bool IsNumeric
+    {
+        get
+        {
+            switch (Type.GetTypeCode(UnderlyingType))
+            {
+                case TypeCode.Byte:
+                case TypeCode.SByte:
+                case TypeCode.Int16:
+                case TypeCode.UInt16:
+                case TypeCode.Int32:
+                case TypeCode.UInt32:
+                case TypeCode.Int64:
+                case TypeCode.UInt64:
+                case TypeCode.Single:
+                case TypeCode.Double:
+                case TypeCode.Decimal:
+                    return true;
+
+                default:
+                    return false;
+            }
+        }
+    }
+
+    public PropertyMetadata(PropertyInfo property)
+    {
+        if (property == null)
+            throw new ArgumentNullException("property");
+
+        Property = property;
+    }
+}
+
+Ale nie zatrzymywałbym się na takim DTO.
+
+Warto, żeby PropertyMetadata reprezentowało rzeczywiście semantykę właściwości.
+
+4. Metadata powinno wiedzieć więcej niż PropertyInfo
+Docelowo:
+
+public sealed class PropertyMetadata
+{
+    public PropertyInfo Property { get; }
+
+    public string Name { get; }
+
+    public Type PropertyType { get; }
+
+    public Type UnderlyingType { get; }
+
+    public bool IsNullable { get; }
+
+    public bool IsEnum { get; }
+
+    public bool IsBoolean { get; }
+
+    public bool IsNumeric { get; }
+
+    public bool IsString { get; }
+
+    public bool CanRead { get; }
+
+    public bool CanWrite { get; }
+
+    public GridViewMetadata GridView { get; }
+
+    public PropertyMetadata(...)
+    {
+        ...
+    }
+}
+
+I tutaj pojawia się bardzo ciekawa możliwość:
+
+PropertyMetadata
+       │
+       ├── CLR information
+       │
+       ├── GridView information
+       │
+       ├── Filter information
+       │
+       └── CustomColumn information
+
+5. Oddzieliłbym metadata CLR od metadata UI
+To jest ważne.
+
+Nie robiłbym:
+
+PropertyMetadata
+{
+    bool IsButton;
+    bool IsFilterable;
+    bool IsCustomColumn;
+    ...
+}
+
+bo po kilku wersjach powstanie ogromna klasa.
+
+Lepiej:
+
+PropertyMetadata
+│
+├── Type information
+│
+├── GridViewMetadata
+│
+├── FilterMetadata
+│
+└── CustomColumnMetadata
+
+Na przykład:
+
+public sealed class PropertyMetadata
+{
+    public PropertyInfo Property { get; }
+
+    public Type PropertyType { get; }
+
+    public Type UnderlyingType { get; }
+
+    public GridViewMetadata GridView { get; }
+
+    public FilterMetadata Filter { get; }
+
+    public CustomColumnMetadata CustomColumn { get; }
+}
+
+Dzięki temu odpowiedzialności pozostają rozdzielone.
+
+6. GridViewMetadata
+Twój obecny GridViewAttribute powinien nadal istnieć.
+
+Nie usuwałbym atrybutu.
+
+Zrobiłbym:
+
+GridViewAttribute
+       │
+       ▼
+MetadataProvider
+       │
+       ▼
+GridViewMetadata
+       │
+       ▼
+GridProperty
+
+Czyli atrybut jest deklaracją, a metadata jest zinterpretowanym opisem.
+
+Przykładowo:
+
+public sealed class GridViewMetadata
+{
+    public bool IsConfigured { get; }
+
+    public bool Ignore { get; }
+
+    public bool Visible { get; }
+
+    public bool AllowEdit { get; }
+
+    public string HeaderName { get; }
+
+    public string ColumnName { get; }
+
+    public string Format { get; }
+
+    public GridViewAttribute.EColumnType ColumnType { get; }
+
+    public string ActionName { get; }
+}
+
+Wtedy GridProperty nie musi już robić:
+
+property.GetCustomAttribute<GridViewAttribute>()
+
+w wielu miejscach.
+
+Robi tylko:
+
+metadata.GridView
+
+7. To samo dla filtrowania
+Tu jest jeszcze większa korzyść.
+
+Obecnie FilterExpressionBuilder ma logikę:
+
+if (valueType.IsEnum)
+
+else if (valueType == typeof(Guid))
+
+else
+{
+    Convert.ChangeType(...)
+}
+
+oraz:
+
+Contains
+    → string
+
+StartsWith
+    → string
+
+GreaterThan
+    → porównywalny typ
+
+Część tej wiedzy powinna pochodzić z metadata.
+
+Przykładowo:
+
+PropertyMetadata metadata =
+    provider.GetProperty<T>("Price");
+
+i:
+
+metadata.PropertyType
+metadata.UnderlyingType
+metadata.IsNullable
+metadata.IsEnum
+metadata.IsString
+metadata.IsNumeric
+
+8. FilterExpressionBuilder staje się prostszy
+Zamiast:
+
+var property = Expression.PropertyOrField(
+    parameter,
+    filter.PropertyName);
+
+var value = CreateValueExpression(
+    property.Type,
+    filter.Value);
+
+możemy mieć:
+
+var metadata =
+    _metadataProvider.GetProperty<T>(
+        filter.PropertyName);
+
+var property =
+    metadata.CreateExpression(parameter);
+
+var value =
+    _valueConverter.Convert(
+        filter.Value,
+        metadata);
+
+To bardzo dobrze rozdziela odpowiedzialności.
+
+FilterExpressionBuilder
+        │
+        ├── jaka właściwość?
+        │       ↓
+        │   MetadataProvider
+        │
+        ├── jaka wartość?
+        │       ↓
+        │   ValueConverter
+        │
+        └── jaki operator?
+                ↓
+          ComparisonBuilder
+
+9. Warto wydzielić ValueConverter
+To jest jedna z rzeczy, które szczególnie bym zrobił.
+
+Obecnie:
+
+CreateValueExpression(...)
+
+robi kilka rzeczy jednocześnie.
+
+Lepiej:
+
+public interface IFilterValueConverter
+{
+    object Convert(
+        object value,
+        PropertyMetadata property);
+}
+
+Implementacja:
+
+public sealed class FilterValueConverter
+    : IFilterValueConverter
+{
+    public object Convert(
+        object value,
+        PropertyMetadata property)
+    {
+        if (value == null)
+            return null;
+
+        Type targetType =
+            property.UnderlyingType;
+
+        ...
+    }
+}
+
+Wtedy łatwiej będzie obsłużyć:
+
+int
+decimal
+DateTime
+Guid
+Enum
+Nullable<T>
+bool
+string
+TimeSpan
+
+oraz później np.:
+
+DateOnly
+TimeOnly
+custom types
+
+bez rozbudowywania FilterExpressionBuilder.
+
+10. TypeMetadata
+Druga bardzo ważna klasa:
+
+public sealed class TypeMetadata
+{
+    public Type Type { get; }
+
+    public IReadOnlyCollection<PropertyMetadata> Properties { get; }
+
+    public PropertyMetadata GetProperty(
+        string name)
+    {
+        ...
+    }
+}
+
+Przykładowo:
+
+var metadata =
+    provider.Get<Product>();
+
+otrzymujemy:
+
+TypeMetadata<Product>
+
+    Id
+    Name
+    Price
+    IsActive
+    Description
+    CreatedAt
+
+Każda właściwość ma własne metadata.
+
+11. IMetadataProvider
+Następnie:
+
+public interface IMetadataProvider
+{
+    TypeMetadata Get(Type type);
+
+    TypeMetadata Get<T>();
+
+    PropertyMetadata GetProperty(
+        Type type,
+        string propertyName);
+
+    PropertyMetadata GetProperty<T>(
+        string propertyName);
+}
+
+Domyślna implementacja:
+
+public sealed class ReflectionMetadataProvider
+    : IMetadataProvider
+{
+    ...
+}
+
+I tu bardzo ważne:
+
+metadata powinno być cache'owane.
+Reflection nie powinien być wykonywany przy każdym:
+
+Paint()
+filter
+sort
+column lookup
+
+12. MetadataCache
+Możemy zrobić:
+
+public sealed class MetadataProvider
+    : IMetadataProvider
+{
+    private readonly Dictionary<Type, TypeMetadata>
+        _cache;
+}
+
+albo jeszcze lepiej:
+
+ConcurrentDictionary<Type, TypeMetadata>
+
+jeżeli API ma być bezpieczne również w bardziej współbieżnych scenariuszach.
+
+Przepływ:
+
+Get<Product>()
+      │
+      ▼
+cache?
+ ┌────┴────┐
+YES       NO
+ │         │
+ ▼         ▼
+metadata Reflection
+             │
+             ▼
+           cache
+
+13. Najważniejsza zmiana: GridProperty
+Obecnie prawdopodobnie GridProperty sam analizuje:
+
+PropertyInfo
+GridViewAttribute
+column type
+format
+visibility
+allow edit
+button
+custom column
+
+Docelowo:
+
+GridProperty
+     │
+     ▼
+IMetadataProvider
+     │
+     ▼
+TypeMetadata
+     │
+     ▼
+PropertyMetadata
+
+I dopiero potem:
+
+PropertyMetadata
+       │
+       ▼
+DataGridViewColumn
+
+Czyli:
+
+foreach (var property in metadata.Properties)
+{
+    var grid = property.GridView;
+
+    if (grid.Ignore)
+        continue;
+
+    var column =
+        _columnFactory.Create(
+            property);
+}
+
+To jest dużo czystsze.
+
+14. Dodałbym GridColumnFactory
+Jeżeli obecnie GridProperty zawiera dużo switch dla:
+
+EColumnType.Number
+EColumnType.Date
+EColumnType.Boolean
+EColumnType.Button
+...
+
+to kolejnym krokiem powinno być:
+
+public interface IGridColumnFactory
+{
+    DataGridViewColumn Create(
+        PropertyMetadata metadata);
+}
+
+Wtedy:
+
+GridProperty
+      │
+      ▼
+ColumnFactory
+      │
+      ├── Text
+      ├── Number
+      ├── Date
+      ├── Boolean
+      ├── Button
+      ├── Memo
+      └── CustomColumn
+
+GridProperty przestaje być klasą, która wie wszystko.
+
+15. Metadata dla CustomColumn
+Tutaj też widzę duży potencjał.
+
+Obecnie CustomColumn<TData,TView> ma swoją konfigurację.
+
+Można stworzyć:
+
+public sealed class CustomColumnMetadata
+{
+    public bool Enabled { get; }
+
+    public Type ViewType { get; }
+
+    public Func<object, object> KeySelector { get; }
+
+    public int CacheSizeMB { get; }
+
+    public ImageFormat ImageFormat { get; }
+}
+
+Ale tutaj zachowałbym ostrożność.
+
+Nie wszystko powinno być metadata właściwości.
+
+CustomColumn jest bardziej metadata kolumny niż metadata CLR property.
+
+Dlatego docelowo widziałbym dwa poziomy:
+
+TypeMetadata
+    │
+    └── PropertyMetadata
+            │
+            └── GridViewMetadata
+
+
+GridMetadata
+    │
+    ├── GridColumnMetadata
+    │
+    └── CustomColumnMetadata
+
+To rozróżnienie będzie bardzo przydatne.
+
+16. Trzy rodzaje metadata
+Moim zdaniem docelowy model powinien wyglądać tak:
+
+Metadata
+│
+├── TypeMetadata
+│
+├── PropertyMetadata
+│
+├── GridMetadata
+│
+└── GridColumnMetadata
+
+TypeMetadata
+Opisuje klasę:
+
+Product
+ ├── Properties
+ ├── Id
+ ├── ...
+ └── CustomColumn capabilities
+
+PropertyMetadata
+Opisuje właściwość CLR:
+
+Price
+ ├── PropertyInfo
+ ├── Type
+ ├── Nullable
+ ├── Enum
+ └── GridView
+
+GridMetadata
+Opisuje konfigurację całego gridu.
+
+GridColumnMetadata
+Opisuje konkretną kolumnę DataGridView.
+
+To jest ważne, ponieważ:
+
+nie każda kolumna DataGridView musi być bezpośrednim odwzorowaniem jednej właściwości CLR.
+
+Przykład:
+
+Button "Edytuj"
+
+może być kolumną UI, mimo że nie reprezentuje realnej właściwości modelu.
+
+17. To rozwiązuje problem Button
+Obecnie masz:
+
+[GridView(
+    "Edytuj",
+    columnType: EColumnType.Button,
+    actionName: "Edit")]
+public string Edit { get; set; }
+
+To jest trochę sztuczne.
+
+Edit niekoniecznie jest rzeczywistą daną.
+
+Metadata pozwala w przyszłości zrobić:
+
+[GridButton(
+    "Edytuj",
+    ActionName = "Edit")]
+
+bez:
+
+public string Edit { get; set; }
+
+czyli:
+
+Model property
+      │
+      └── data column
+
+Grid metadata
+      │
+      └── UI-only column
+
+To byłaby bardzo naturalna ewolucja biblioteki.
+
+18. Metadata może być również rozszerzalne
+Nie robiłbym jednej gigantycznej klasy z 50 właściwościami.
+
+Możemy mieć:
+
+public interface IMetadataExtension
+{
+}
+
+i:
+
+public sealed class PropertyMetadata
+{
+    public PropertyInfo Property { get; }
+
+    public IReadOnlyDictionary<Type, object>
+        Extensions { get; }
+}
+
+albo prostszy mechanizm:
+
+public T GetExtension<T>()
+    where T : class
+{
+    ...
+}
+
+Wtedy później:
+
+GridFilter
+    → FilterMetadata
+
+GridProperty
+    → GridViewMetadata
+
+CustomColumn
+    → CustomColumnMetadata
+
+Validation
+    → ValidationMetadata
+
+Sorting
+    → SortMetadata
+
+bez przebudowy podstawowego modelu.
+
+19. Szczególnie ważne: metadata powinno być niezależne od WinForms
+To jest rzecz, którą mocno rekomenduję.
+
+Warstwa:
+
+MC.Data.DataGrid.Metadata
+
+nie powinna zależeć od:
+
+System.Windows.Forms
+
+czyli:
+
+Metadata
+    ↓
+System.Reflection
+    ↓
+.NET
+
+a nie:
+
+Metadata
+    ↓
+WinForms
+
+Dzięki temu można wykorzystać metadata także do:
+
+filter
+sort
+validation
+export
+search
+column generation
+
+bez uruchamiania UI.
+
+20. Finalna architektura
+Docelowo widziałbym bibliotekę mniej więcej tak:
+
+MC.Data.DataGrid
+│
+├── Metadata
+│   │
+│   ├── IMetadataProvider
+│   ├── ReflectionMetadataProvider
+│   ├── TypeMetadata
+│   ├── PropertyMetadata
+│   ├── GridMetadata
+│   ├── GridColumnMetadata
+│   └── MetadataCache
+│
+├── GridProperty
+│   │
+│   ├── GridProperty
+│   ├── GridViewAttribute
+│   ├── GridAction<T>
+│   ├── GridActionEventArgs<T>
+│   └── ColumnFactory
+│
+├── GridFilter
+│   │
+│   ├── GridFilter
+│   ├── FilterDefinition
+│   ├── FilterOperator
+│   ├── FilterExpressionBuilder
+│   ├── FilterValueConverter
+│   ├── IDataSourceAdapter
+│   ├── EnumerableDataSourceAdapter<T>
+│   └── QueryableDataSourceAdapter<T>
+│
+├── CustomColumn
+│   │
+│   ├── CustomColumn<TData,TView>
+│   ├── CustomCell<TData,TView>
+│   ├── ICustomColumnData
+│   ├── IGridView<T>
+│   ├── RenderHost
+│   ├── BitmapCache
+│   └── BitmapCacheKey
+│
+└── Infrastructure
+    ├── BindingSourceResolver
+    └── ...
+
+A zależności:
+
+                    ┌─────────────────┐
+                    │    Metadata     │
+                    └────────┬────────┘
+                             │
+             ┌───────────────┼────────────────┐
+             │               │                │
+             ▼               ▼                ▼
+       GridProperty      GridFilter      CustomColumn
+             │               │                │
+             ▼               ▼                ▼
+          Columns        Expressions       Rendering
+             │               │                │
+             └───────────────┼────────────────┘
+                             ▼
+                       DataGridView
+
+21. Największa korzyść
+Najważniejsza zmiana nie polega na tym, że powstanie kilka nowych klas.
+
+Chodzi o zmianę przepływu informacji.
+
+Obecnie
+GridProperty
+    ↓
+Reflection
+
+GridFilter
+    ↓
+Reflection / Type
+
+CustomColumn
+    ↓
+własna konfiguracja
+
+czyli:
+
+trzy miejsca interpretują model.
+
+Po zmianie
+             Model
+               │
+               ▼
+        MetadataProvider
+               │
+               ▼
+        ┌──────────────┐
+        │   Metadata   │
+        └──────┬───────┘
+               │
+       ┌───────┼───────┐
+       ▼       ▼       ▼
+      Grid   Filter  Custom
+
+czyli:
+
+jedno miejsce interpretuje model, a reszta korzysta z gotowej informacji.
+
+To jest moim zdaniem architektonicznie największy krok, jaki możesz teraz zrobić.
+
+22. I zrobiłbym to etapami
+Nie przepisywałbym od razu całej biblioteki.
+
+Etap 1 — fundament
+Wprowadzić:
+
+IMetadataProvider
+ReflectionMetadataProvider
+TypeMetadata
+PropertyMetadata
+
+i cache.
+
+Etap 2 — GridProperty
+Przenieść interpretację:
+
+GridViewAttribute
+
+do:
+
+GridViewMetadata
+
+i zmusić GridProperty do korzystania z metadata.
+
+Etap 3 — GridFilter
+Usunąć z FilterExpressionBuilder część odpowiedzialną za odkrywanie typu.
+
+Wprowadzić:
+
+PropertyMetadata
++
+FilterValueConverter
+
+Etap 4 — CustomColumn
+Opisać konfigurację CustomColumn jako metadata kolumny, ale nie mieszać jej bezpośrednio z CLR PropertyMetadata.
+
+Etap 5 — ColumnFactory
+Wyciągnąć tworzenie DataGridViewColumn z GridProperty.
+
+Wtedy GridProperty staje się przede wszystkim orkiestratorem.
+
+23. Jeszcze jedna rzecz, którą warto zrobić od początku
+Wprowadziłbym jawne rozróżnienie między PropertyMetadata a ColumnMetadata.
+
+To może wydawać się drobiazgiem, ale uchroni bibliotekę przed dużym problemem w przyszłości:
+
+PropertyMetadata
+    = "co jest w modelu?"
+
+ColumnMetadata
+    = "jak chcę to pokazać w gridzie?"
+
+To daje bardzo mocną podstawę do późniejszego dodania:
+
+Sorting
+Grouping
+Filtering
+Searching
+Export
+Validation
+Formatting
+Conditional formatting
+Column visibility
+Column ordering
+
+bez rozpychania GridViewAttribute i PropertyMetadata w nieskończoność.
+
+To właśnie tę granicę zaprojektowałbym teraz, zanim zacząłbym refaktoryzować istniejący kod.

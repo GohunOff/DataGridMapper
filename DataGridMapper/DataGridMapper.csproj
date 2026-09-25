@@ -71,17 +71,23 @@
     <Compile Include="Data\DataGrid\GridFilter.cs" />
     <Compile Include="Data\DataGrid\GridViewAttribute.cs" />
     <Compile Include="Data\DataGrid\I\ICustomColumnData.cs" />
+    <Compile Include="Data\DataGrid\I\IGridMetadataProvider.cs" />
+    <Compile Include="Data\DataGrid\I\IGridPropertyMetadataProvider.cs" />
     <Compile Include="Data\DataGrid\I\IGridView.cs" />
     <Compile Include="Data\DataGrid\GridProperty.cs" />
+    <Compile Include="Data\DataGrid\Metadata\CustomColumnMetadata.cs" />
+    <Compile Include="Data\DataGrid\Metadata\FilterMetadata.cs" />
+    <Compile Include="Data\DataGrid\Metadata\GridMetadata.cs" />
+    <Compile Include="Data\DataGrid\Metadata\GridMetadataProvider.cs" />
+    <Compile Include="Data\DataGrid\Metadata\GridPropertyMetadata.cs" />
+    <Compile Include="Data\DataGrid\Metadata\GridPropertyMetadataProvider.cs" />
+    <Compile Include="Data\DataGrid\Metadata\PropertyMetadata.cs" />
     <Compile Include="Properties\AssemblyInfo.cs" />
   </ItemGroup>
   <ItemGroup>
     <None Include="Data\DataGrid\CustomColumn\redme.mw" />
     <None Include="redme.md" />
-  </ItemGroup>
-  <ItemGroup>
-    <Content Include="Data\DataGrid\redr.txt" />
-    <Content Include="Data\DataGrid\TextFile1.txt" />
+    <Content Include="TODO.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>

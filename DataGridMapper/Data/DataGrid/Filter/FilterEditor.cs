@@ -17,31 +17,56 @@ namespace MC.Data.DataGrid.Filter
 
         public ComboBox BooleanComboBox { get; private set; }
 
-        public bool IsBoolean { get; private set; }
+        public ComboBox EnumComboBox { get; private set; }
 
-        public FilterEditor(
+        public bool IsBoolean
+        {
+            get { return BooleanComboBox != null; }
+        }
+
+        public bool IsEnum
+        {
+            get { return EnumComboBox != null; }
+        }
+
+        private FilterEditor()
+        {
+        }
+
+        public static FilterEditor CreateText(
             string propertyName,
             ComboBox operatorComboBox,
             TextBox valueTextBox)
         {
-            PropertyName = propertyName;
-
-            OperatorComboBox =
-                operatorComboBox;
-
-            ValueTextBox =
-                valueTextBox;
-
-            IsBoolean = false;
+            return new FilterEditor
+            {
+                PropertyName = propertyName,
+                OperatorComboBox = operatorComboBox,
+                ValueTextBox = valueTextBox
+            };
         }
 
-        public FilterEditor(
-           string propertyName,
-           ComboBox booleanComboBox)
+        public static FilterEditor CreateBoolean(
+            string propertyName,
+            ComboBox comboBox)
         {
-            PropertyName = propertyName;
-            BooleanComboBox = booleanComboBox;
-            IsBoolean = true;
+            return new FilterEditor
+            {
+                PropertyName = propertyName,
+                BooleanComboBox = comboBox
+            };
+        }
+
+        public static FilterEditor CreateEnum(
+            string propertyName,
+            ComboBox comboBox)
+        {
+            return new FilterEditor
+            {
+                PropertyName = propertyName,
+                EnumComboBox = comboBox
+            };
         }
     }
+
 }
