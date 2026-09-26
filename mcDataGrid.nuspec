@@ -1,0 +1,36 @@
+<?xml version="1.0"?>
+<package>
+  <metadata>
+	<title>MC.Data.DataGrid</title>
+    <id>mcDataGrid</id>
+    <version>1.0.0.0</version>
+    <authors>Przemysław Załuska</authors>
+	<owners>gohunoff@gmail.com</owners>
+	<projectUrl>https://github.com/GohunOff/CLIApp</projectUrl>
+	<repository type="git" url="https://github.com/GohunOff/CLIApp" />
+	  <description>
+		  A lightweight and extensible WinForms DataGridView library for .NET applications.
+		  Define columns using C# attributes, filter data with flexible expressions,
+		  and render custom WinForms views inside cells with efficient bitmap caching.
+	  </description>
+	  <tags>
+		  winforms datagrid datagridview columns filtering custom-columns
+		  bitmap-cache lru-cache attributes csharp dotnet
+	  </tags>
+	 
+	  <license type="expression">MIT</license>
+
+	  <readme>README.md</readme>
+
+	  <dependencies>
+		  <group targetFramework=".NETFramework4.8" />
+	  </dependencies>
+	  
+  </metadata>
+	<files>
+		<file src="bin\Release\mcDataGrid.dll" target="lib\net48" />
+		<file src="bin\Release\mcDataGrid.xml" target="lib\net48"/>
+		<file src="README.md" target="" />
+		<file src="LICENSE.txt" target="" />
+	</files>
+</package>

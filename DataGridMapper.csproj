@@ -7,7 +7,7 @@
     <ProjectGuid>{46C554AE-0B52-4006-B8BD-6DFA72CA5D23}</ProjectGuid>
     <OutputType>Library</OutputType>
     <RootNamespace>MC</RootNamespace>
-    <AssemblyName>DataGridMapper</AssemblyName>
+    <AssemblyName>mcDataGrid</AssemblyName>
     <TargetFrameworkVersion>v4.8</TargetFrameworkVersion>
     <FileAlignment>512</FileAlignment>
     <AutoGenerateBindingRedirects>true</AutoGenerateBindingRedirects>
@@ -31,6 +31,7 @@
     <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
     <WarningLevel>4</WarningLevel>
+    <DocumentationFile>bin\Release\mcDataGrid.xml</DocumentationFile>
   </PropertyGroup>
   <PropertyGroup>
     <StartupObject />
@@ -86,7 +87,8 @@
   </ItemGroup>
   <ItemGroup>
     <None Include="Data\DataGrid\CustomColumn\redme.mw" />
-    <None Include="redme.md" />
+    <None Include="mcDataGrid.nuspec" />
+    <None Include="README.md" />
     <Content Include="LICENSE.txt" />
     <Content Include="TODO.txt" />
   </ItemGroup>
