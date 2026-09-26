@@ -1966,7 +1966,7 @@ Copyright (c) 2026 gohunoff@gmail.com
 **Author:** Przemysław Załuska  
 **Email:** gohunoff@gmail.com
 
-**GitHub:**  [MC.Data.DataGrid on GitHub]https://github.com/GohunOff/DataGrid
+**GitHub:**  [MC.Data.DataGrid on GitHub]https://github.com/GohunOff/DataGridMapper
 
 MC.Data.DataGrid is developed and maintained by the author.
 
