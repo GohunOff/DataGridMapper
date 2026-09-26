@@ -22,13 +22,13 @@ jobs:
         uses: microsoft/setup-msbuild@v2
 
       - name: Restore
-        run: nuget restore CLIApp.csproj
+        run: nuget restore DataGridMapper.csproj
 
       - name: Build
-        run: msbuild CLIApp.csproj /p:Configuration=Release
+        run: msbuild DataGridMapper.csproj /p:Configuration=Release
 
       - name: Create NuGet package
-        run: nuget pack mcCLIApp.nuspec -OutputDirectory packages
+        run: nuget pack mcDataGrid.nuspec -OutputDirectory packages
 
       - name: NuGet login
         uses: NuGet/login@v1
