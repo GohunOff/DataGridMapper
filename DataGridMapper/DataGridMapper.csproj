@@ -87,6 +87,7 @@
   <ItemGroup>
     <None Include="Data\DataGrid\CustomColumn\redme.mw" />
     <None Include="redme.md" />
+    <Content Include="LICENSE.txt" />
     <Content Include="TODO.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />

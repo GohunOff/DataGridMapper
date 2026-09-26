@@ -1,12 +1,33 @@
 ﻿# MC.Data.DataGrid
+The MC.Data.DataGrid library extends the standard WinForms DataGridView with an extensive, yet easy-to-use mechanism for column configuration, data filtering, and rendering custom WinForms views directly inside cells.
+The library has been designed so that typical usage requires only a small amount of code, while still allowing further extension and customization of DataGridView behavior.
 
-MC.Data.DataGrid to biblioteka rozszerzająca standardowy WinForms DataGridView o trzy główne obszary funkcjonalności:
-- GridProperty — deklaratywna konfiguracja kolumn na podstawie atrybutów modelu oraz obsługa akcji dla kolumn typu Button.
-- GridFilter — filtrowanie danych bezpośrednio powiązane z DataGridView, obsługujące zarówno źródła IEnumerable, jak i IQueryable.
-- CustomColumn — możliwość wyświetlania złożonych widoków WinForms jako zawartości pojedynczej komórki, z renderowaniem do Bitmap i pamięciowym cache LRU.
+#### Main Features
+- declarative column configuration using GridViewAttribute,
+- automatic column creation based on the model,
+- support for text, numeric, date, time, bool, Button, Tooltip, MemoEdit, and CustomColumn columns,
+- support for actions for Button columns,
+- data filtering directly from the DataGridView,
+- support for IEnumerable and IQueryable,
+- support for nested BindingSource,
+- filtering multiple properties simultaneously,
+- support for null values,
+- text filtering using Contains, StartsWith, and EndsWith,
+- filtering numeric, date, and time values,
+- filtering bool and enum values using convenient selection lists,
+- rendering custom WinForms controls inside cells,
+- one shared TView instance,
+- rendering to Bitmap,
+- in-memory LRU cache,
+- cache memory limit,
+- cache storing encoded byte[] instead of Bitmap objects,
+- cache keys dependent on identifier, size, and rendering parameters,
+- custom KeySelector support,
+- CustomColumn integration with GridProperty metadata system,
+- no need to create a control for every row.
 
-Biblioteka została zaprojektowana tak, aby standardowy scenariusz użycia był prosty:
-
+#### Architecture
+```
                          MC.Data.DataGrid
                                 │
               ┌─────────────────┼─────────────────┐
@@ -15,200 +36,83 @@ Biblioteka została zaprojektowana tak, aby standardowy scenariusz użycia był 
         GridProperty        GridFilter       CustomColumn
               │                 │                 │
               ▼                 ▼                 ▼
-        konfiguracja        filtrowanie       własny widok
-        kolumn              danych            WinForms
+        configuration       filtering         rendering
+        DataGridView            data             custom UI
               │                 │                 │
               └─────────────────┼─────────────────┘
                                 │
                                 ▼
                          DataGridView
+```
+Each element can be used independently.
 
-## 1. Trzy główne elementy biblioteki
+It is therefore possible to use:
+```
+GridProperty
+```
+or:
+```
+GridProperty + GridFilter
+```
+or:
+```
+GridProperty + CustomColumn
+```
+or the complete set:
+```
+GridProperty
++ GridFilter
++ CustomColumn
+```
+### 1. GridProperty
+GridProperty is responsible for declarative DataGridView configuration based on the data model.
 
-### 1.1. GridProperty
+Instead of manually creating and configuring every column:
+```
+dataGridView1.Columns.Add(...);
+dataGridView1.Columns[0].HeaderText = "...";
+dataGridView1.Columns[0].Width = ...;
+```
+the configuration can be placed directly next to the model property:
+```
+[GridView("Name")]
+public string Name { get; set; }
+```
+Then:
+```
+_gridProperty.InitData<Product>();
+```
+automatically prepares the columns.
 
-GridProperty odpowiada za konfigurację DataGridView na podstawie modelu danych.
+#### Advantages of GridProperty
+- column configuration is located next to the model,
+- less code in the form,
+- consistent configuration,
+- automatic property recognition,
+- ability to hide properties,
+- formatting support,
+- editing support,
+- button support,
+- ability to use CustomColumn.
 
-Pozwala między innymi:
-- definiować kolumny za pomocą GridViewAttribute,
-- określać nazwy i widoczność kolumn,
-- definiować typ kolumny,
-- określać formatowanie,
-- włączać edycję,
-- tworzyć kolumny przycisków,
-- obsługiwać akcje GridAction<T>,
-- korzystać z CustomColumn.
+### 2. GridViewAttribute
+GridViewAttribute defines how a model property should be displayed.
 
-Typowy przepływ:
-
-Model
-  │
-  │ [GridView(...)]
-  ▼
-GridProperty.InitData<T>()
-  │
-  ▼
-DataGridView
-
-1.2. GridFilter
-GridFilter odpowiada za filtrowanie danych prezentowanych przez DataGridView.
-
-Obsługuje między innymi:
-
-porównania wartości,
-
-tekst Contains,
-
-StartsWith,
-
-EndsWith,
-
-operatory <, <=, >, >=,
-
-null,
-
-filtrowanie wielu właściwości jednocześnie.
-
-Mechanizm rozpoznaje źródła danych typu:
-
-IEnumerable
-
-oraz:
-
-IQueryable
-
-Dzięki temu możliwe jest filtrowanie zarówno danych znajdujących się w pamięci:
-
-List<Product>
-
-jak i zapytań:
-
-IQueryable<Product>
-
-Przepływ:
-
-DataGridView
-     │
-     ▼
- GridFilter
-     │
-     ▼
-FilterDefinition
-     │
-     ▼
-FilterExpressionBuilder
-     │
-     ├── IEnumerable → LINQ to Objects
-     │
-     └── IQueryable → Expression / LINQ Provider
-
-1.3. CustomColumn
-CustomColumn odpowiada za renderowanie własnego widoku WinForms jako zawartości komórki DataGridView.
-
-Jest przeznaczony dla sytuacji, w których standardowe kolumny DataGridView nie są wystarczające.
-
-Przykładowo pojedyncza komórka może prezentować:
-
-┌──────────────────────────────┐
-│ Jan Kowalski                 │
-│ ul. Piotrkowska 10           │
-│ Pabianice                    │
-│ ● Aktywny                    │
-└──────────────────────────────┘
-
-Widok jest renderowany do Bitmap, a wynik jest przechowywany w BitmapCache.
-
-Przepływ:
-
-TData
-  │
-  ▼
-TView
-  │
-  ▼
-AncherRenderHost
-  │
-  ▼
-Bitmap
-  │
-  ▼
-BitmapCache
-  │
-  ▼
-DataGridView
-
-Najważniejszą zasadą jest to, że nie tworzona jest osobna kontrolka dla każdej komórki.
-
-Jedna instancja TView jest współdzielona przez CustomColumn.
-
-2. Typowy scenariusz użycia
-Najczęstszy scenariusz może łączyć wszystkie trzy elementy:
-
-                         Model
-                           │
-             ┌─────────────┼─────────────┐
-             │             │             │
-             ▼             ▼             ▼
-        GridProperty   GridFilter   CustomColumn
-             │             │             │
-             │             │             │
-             └─────────────┼─────────────┘
-                           │
-                           ▼
-                      DataGridView
-
-Przykładowo aplikacja może:
-
-skonfigurować kolumny przez GridViewAttribute,
-
-wyświetlić własny PersonView jako CustomColumn,
-
-udostępnić przycisk Edit,
-
-pozwolić użytkownikowi filtrować Name, Age oraz IsActive.
-
-3. GridProperty
-3.1. Podstawowa konfiguracja
-Najprostszy scenariusz:
-
-private readonly GridProperty _gridProperty;
-
-public Form1()
-{
-    InitializeComponent();
-
-    _gridProperty =
-        new GridProperty(dataGridView1);
-
-    _gridProperty.InitData<Product>();
-
-    dataGridView1.DataSource = products;
-}
-
-Konfiguracja kolumn znajduje się w modelu.
+Example:
 
 public class Product
 {
-    [GridView("Nazwa")]
+    [GridView("Name")]
     public string Name { get; set; }
 
     [GridView(
-        "Cena",
+        "Price",
         columnType: GridViewAttribute.EColumnType.Number)]
     public decimal Price { get; set; }
 }
 
-4. GridViewAttribute
-GridViewAttribute określa sposób prezentacji właściwości modelu w DataGridView.
-
-Przykład:
-
-[GridView("Nazwa")]
-public string Name { get; set; }
-
-Atrybut jest przeznaczony do właściwości modelu.
-
-Konstruktor
+Constructor
+```
 GridViewAttribute(
     string name,
     bool ignore = false,
@@ -218,295 +122,266 @@ GridViewAttribute(
     string format = "",
     EColumnType columnType = EColumnType.None,
     string actionName = "")
+```
+#### Parameters
+- Parameter Meaning
+- name Header text
+- ignore Completely omit the property
+- visibility Column visibility
+- allowEdit Whether editing is allowed
+- columnName DataGridView column name
+- format Value display format
+- columnType Column type
+- actionName Action name for Button
 
-Parametry
-Parametr	Znaczenie
-name	Tekst nagłówka kolumny
-ignore	Całkowite pominięcie właściwości
-visibility	Widoczność kolumny
-allowEdit	Możliwość edycji
-columnName	Nazwa kolumny DataGridView
-format	Format prezentowania wartości
-columnType	Typ kolumny
-actionName	Nazwa akcji dla kolumny Button
+### 3. Column Types
+The library supports, among others:
+- None
+- Text
+- Number
+- Date
+- Time
+- DateTime
+- Button
+- Tooltip
+- MemoEdit
+- Boolean
+- CustomColumn
+- None
 
-5. Typy kolumn
-Dostępne są:
-
-None
-Text
-Number
-Date
-Time
-DateTime
-Button
-Tooltip
-MemoEdit
-Boolean
-CustomColumn
-
-None
-Standardowa kolumna.
-
-[GridView("Nazwa")]
+#### Standard column.
+```
+[GridView("Name")]
 public string Name { get; set; }
-
+```
 Text
-Kolumna tekstowa.
-
+```
 [GridView(
-    "Nazwa",
+    "Name",
     columnType: GridViewAttribute.EColumnType.Text)]
 public string Name { get; set; }
-
+```
 Number
-Kolumna dla wartości liczbowych.
 
-Obsługiwane typy obejmują:
+The following numeric types are supported:
+- byte
+- sbyte
+- short
+- ushort
+- int
+- uint
+- long
+- ulong
+- float
+- double
+- decimal
 
-byte
-sbyte
-short
-ushort
-int
-uint
-long
-ulong
-float
-double
-decimal
-
-Przykład:
-
+Example:
+```
 [GridView(
-    "Cena",
+    "Price",
     columnType: GridViewAttribute.EColumnType.Number)]
 public decimal Price { get; set; }
-
-Domyślny format:
-
+```
+The default format can be configured through the library configuration, for example:
+```
 N2
-
-Można go zmienić:
-
+```
+Custom format:
+```
 [GridView(
-    "Cena",
+    "Price",
     format: "N0",
     columnType: GridViewAttribute.EColumnType.Number)]
 public decimal Price { get; set; }
-
+```
 Boolean
-Tworzy kolumnę checkbox.
 
-Obsługiwane:
-
+Supported types:
+```
 bool
 bool?
-
-Przykład:
-
+```
+Example:
+```
 [GridView(
-    "Aktywny",
+    "Active",
     columnType: GridViewAttribute.EColumnType.Boolean)]
 public bool IsActive { get; set; }
-
+```
 Date
-Kolumna dla DateTime.
-
-Domyślny format:
-
-dd.MM.yyyy
-
-Przykład:
-
+```
 [GridView(
-    "Data",
+    "Date",
     columnType: GridViewAttribute.EColumnType.Date)]
 public DateTime CreatedAt { get; set; }
-
-Własny format:
-
+```
+Example format:
+```
+dd.MM.yyyy
+```
+Custom format:
+```
 [GridView(
-    "Data",
+    "Date",
     format: "yyyy-MM-dd",
     columnType: GridViewAttribute.EColumnType.Date)]
 public DateTime CreatedAt { get; set; }
-
+```
 Time
-Obsługuje:
 
+Supports:
+```
 TimeSpan
 TimeSpan?
 DateTime
 DateTime?
-
-Przykład:
-
+```
+Example:
+```
 [GridView(
-    "Czas",
+    "Time",
     columnType: GridViewAttribute.EColumnType.Time)]
 public TimeSpan Duration { get; set; }
-
+```
 DateTime
-Kolumna dla daty i czasu.
-
-Domyślny format:
-
-dd.MM.yyyy HH:mm:ss
-
-Przykład:
-
+```
 [GridView(
-    "Utworzono",
+    "Created",
     columnType: GridViewAttribute.EColumnType.DateTime)]
 public DateTime CreatedAt { get; set; }
-
+```
+Example format:
+```
+dd.MM.yyyy HH:mm:ss
+```
 Tooltip
-Wartość komórki może być prezentowana jako tooltip.
-
+```
 [GridView(
-    "Informacja",
+    "Information",
     columnType: GridViewAttribute.EColumnType.Tooltip)]
 public string Information { get; set; }
-
+```
 MemoEdit
-Kolumna przeznaczona dla dłuższego tekstu.
 
+Intended for longer text:
+```
 [GridView(
-    "Opis",
-    columnType: GridViewAttribute.EColumnType.MemoEdit)]
-public string Description { get; set; }
-
-Button
-Tworzy przycisk.
-
-Wymagane jest actionName.
-
-[GridView(
-    "Edytuj",
-    columnType: GridViewAttribute.EColumnType.Button,
-    actionName: "Edit")]
-public string Edit { get; set; }
-
-Następnie:
-
-_gridProperty
-    .GetAction<Product>("Edit")
-    .Click += Edit_Click;
-
-6. Visibility
-Domyślnie kolumna jest widoczna:
-
-[GridView("Nazwa")]
-public string Name { get; set; }
-
-Można ją ukryć:
-
-[GridView(
-    "Wartość techniczna",
-    visibility: false)]
-public string TechnicalValue { get; set; }
-
-Kolumna pozostaje skonfigurowana, ale nie jest widoczna.
-
-7. Ignore
-Właściwość można całkowicie pominąć:
-
-[GridView(
-    "Wartość ignorowana",
-    ignore: true)]
-public string IgnoredValue { get; set; }
-
-Różnica:
-
-visibility: false
-    → kolumna istnieje, ale jest ukryta
-
-ignore: true
-    → właściwość jest pomijana podczas konfiguracji
-
-8. AllowEdit
-Domyślnie kolumny są tylko do odczytu.
-
-[GridView(
-    "Nazwa",
-    allowEdit: true)]
-public string Name { get; set; }
-
-Dla dłuższego tekstu:
-
-[GridView(
-    "Opis",
+    "Description",
     allowEdit: true,
     columnType: GridViewAttribute.EColumnType.MemoEdit)]
 public string Description { get; set; }
-
-9. ColumnName
-name określa tekst nagłówka, natomiast columnName nazwę kolumny DataGridView.
-
+```
+Button
+```
 [GridView(
-    "Nazwa użytkownika",
+    "Edit",
+    columnType: GridViewAttribute.EColumnType.Button,
+    actionName: "Edit")]
+public string Edit { get; set; }
+```
+The action can then be obtained:
+```
+_gridProperty
+    .GetAction<Product>("Edit")
+    .Click += Edit_Click;
+```
+### 4. Visibility and Ignore
+A column can be hidden:
+```
+[GridView(
+    "Technical Value",
+    visibility: false)]
+public string TechnicalValue { get; set; }
+```
+A column can also be completely omitted:
+```
+[GridView(
+    "Ignored Value",
+    ignore: true)]
+public string IgnoredValue { get; set; }
+```
+Difference:
+```
+visibility: false
+    ↓
+column exists, but is not visible
+
+ignore: true
+    ↓
+property is skipped during configuration
+```
+### 5. AllowEdit
+By default, columns are intended for read-only use.
+
+Editing can be enabled:
+```
+[GridView(
+    "Name",
+    allowEdit: true)]
+public string Name { get; set; }
+```
+For longer text:
+```
+[GridView(
+    "Description",
+    allowEdit: true,
+    columnType: GridViewAttribute.EColumnType.MemoEdit)]
+public string Description { get; set; }
+```
+### 6. ColumnName
+name specifies the text visible to the user.
+
+columnName specifies the DataGridView column name.
+```
+[GridView(
+    "User Name",
     columnName: "UserName")]
 public string Name { get; set; }
+```
+### 7. GridAction
+Button columns can have an action.
 
-10. Format
-Format określa sposób prezentowania wartości.
-
+Model:
+```
 [GridView(
-    "Cena",
-    format: "N2",
-    columnType: GridViewAttribute.EColumnType.Number)]
-public decimal Price { get; set; }
-
-Dla daty:
-
-[GridView(
-    "Data",
-    format: "yyyy-MM-dd",
-    columnType: GridViewAttribute.EColumnType.Date)]
-public DateTime CreatedAt { get; set; }
-
-Format jest zgodny ze standardowymi formatami .NET odpowiednimi dla danego typu danych.
-
-11. Akcje GridAction
-Dla kolumn Button można pobrać akcję za pomocą:
-
-GridAction<T> GetAction<T>(string key)
-
-Przykład:
-
+    "Edit",
+    columnType: GridViewAttribute.EColumnType.Button,
+    actionName: "Edit")]
+public string Edit { get; set; }
+```
+Getting the action:
+```
 _gridProperty
     .GetAction<Product>("Edit")
     .Click += Edit_Click;
 
-key musi odpowiadać actionName:
-
-[GridView(
-    "Edytuj",
-    columnType: GridViewAttribute.EColumnType.Button,
-    actionName: "Edit")]
-
-12. GridAction<T>
-GridAction<T> reprezentuje akcję przypisaną do przycisku.
-
-Publiczne elementy:
-
+GridAction<T>
+```
+The action contains:
+```
 string Key
-
-oraz:
-
+```
+and:
+```
 event EventHandler<GridActionEventArgs<T>> Click
 
-13. GridActionEventArgs<T>
-Argument zdarzenia zawiera:
+GridActionEventArgs<T>
+```
+The event argument contains:
+- Item
+- Grid
+- RowIndex
+- ColumnIndex
 
-Item
-Grid
-RowIndex
-ColumnIndex
+The most important property is:
+```
+e.Item
+```
+which contains the model object associated with the clicked row.
 
-Przykład:
-
+Example:
+```
 private void Edit_Click(
     object sender,
     GridActionEventArgs<Product> e)
@@ -515,219 +390,351 @@ private void Edit_Click(
 
     MessageBox.Show(product.Name);
 }
+```
+## 8. GridFilter
+GridFilter adds a filtering panel to the DataGridView.
 
-Item jest najważniejszą właściwością — zawiera obiekt modelu związany z klikniętym wierszem.
+Example:
+```
+_gridFilter =
+    new GridFilter(dataGridView1);
 
-14. GridFilter
-GridFilter jest opcjonalnym elementem biblioteki.
+_gridFilter.Enable();
+```
+Filters are created based on GridPropertyMetadata.
 
-Jego zadaniem jest dostarczenie użytkownikowi interfejsu filtrowania danych prezentowanych przez DataGridView.
-
-Przykładowe użycie:
-
-private readonly GridFilter _gridFilter;
-
-public Form1()
-{
-    InitializeComponent();
-
-    _gridFilter =
-        new GridFilter(dataGridView1);
-
-    _gridFilter.Enable();
-}
-
-Filtrowanie wykorzystuje definicje:
-
-FilterDefinition
-
-oraz:
-
-FilterOperator
-
-i buduje odpowiednie wyrażenie:
-
+Architecture:
+```
+DataGridViewColumn
+        │
+        ▼
+GridPropertyMetadata
+        │
+        ▼
 FilterEditor
-      │
-      ▼
+        │
+        ▼
 FilterDefinition
-      │
-      ▼
+        │
+        ▼
 FilterExpressionBuilder
-      │
-      ▼
+        │
+        ▼
 IDataSourceAdapter
-      │
-      ├── EnumerableDataSourceAdapter<T>
-      │
-      └── QueryableDataSourceAdapter<T>
+```
+### 9. Supported Operators
+- Equals
+- NotEquals
+- Contains
+- StartsWith
+- EndsWith
+- GreaterThan
+- GreaterThanOrEqual
+- LessThan
+- LessThanOrEqual
+- IsNull
+- IsNotNull
 
-15. FilterOperator
-Dostępne operatory:
-
-Equals
-NotEquals
-Contains
-StartsWith
-EndsWith
-GreaterThan
-GreaterThanOrEqual
-LessThan
-LessThanOrEqual
-IsNull
-IsNotNull
-
-Equals
+Examples:
+```
 Age == 18
-
-NotEquals
 Age != 18
-
-Contains
 Name.Contains("Jan")
-
-StartsWith
 Name.StartsWith("Jan")
-
-EndsWith
 Name.EndsWith("ski")
-
-GreaterThan
 Age > 18
-
-GreaterThanOrEqual
 Age >= 18
-
-LessThan
 Age < 18
-
-LessThanOrEqual
 Age <= 18
-
-IsNull
 Name == null
-
-IsNotNull
 Name != null
+```
 
-16. FilterDefinition
-FilterDefinition opisuje pojedynczy warunek.
+### 10. GridFilter Interface
+For typical text, numeric, date, and time properties, the following layout is available:
+```
+┌───────────────┬──────────────────┐
+│ operator      │ value            │
+└───────────────┴──────────────────┘
+```
+For bool:
+```
+┌──────────────────────────────┐
+│ All / Yes / No               │
+└──────────────────────────────┘
+```
+For enum:
+```
+┌──────────────────────────────┐
+│ All / enum value             │
+└──────────────────────────────┘
+```
+This means the user does not have to enter true / false or the textual representation of an enum.
 
-new FilterDefinition(
-    "Name",
-    FilterOperator.Contains,
-    "Jan");
+### 11. Bool Filtering
+For:
+```
+public bool IsActive { get; set; }
+```
+the panel contains:
+- All
+- Yes
+- No
 
-Posiada:
+Selecting Yes creates:
+```
+FilterOperator.Equals
+```
+with the value:
+```
+true
+```
+Selecting No creates:
+```
+FilterOperator.Equals
+```
+with the value:
+```
+false
+```
+### 12. Enum Filtering
+For:
+```
+public ProductStatus Status { get; set; }
+```
+the filter automatically creates:
+- All
+- New
+- Processing
+- Completed
+- Cancelled
 
-string PropertyName
-FilterOperator Operator
-object Value
+Selecting a value results in filtering:
+```
+Status == selectedValue
+```
+### 13. DateTime and TimeSpan
+The filter uses strict input formats.
 
-Przykład:
+DateTime
+```
+dd.MM.yyyy
+```
+Example:
+```
+25.09.2026
+```
+TimeSpan
+```
+hh:mm:ss
+```
+Example:
+```
+08:30:00
+```
+The column display format and the format entered into the filter are independent mechanisms.
 
+### 14. FilterDefinition
+FilterDefinition describes a single condition:
+```
+var filter =
+    new FilterDefinition(
+        "Name",
+        FilterOperator.Contains,
+        "Jan");
+```
+Available properties:
+- PropertyName
+- Operator
+- Value
+
+Numeric example:
+```
 var filter =
     new FilterDefinition(
         "Price",
         FilterOperator.GreaterThan,
         100m);
+```
+Null filter:
+```
+var filter =
+    new FilterDefinition(
+        "Description",
+        FilterOperator.IsNull,
+        null);
+```
+### 15. Multiple Filters
+Active filters are combined using logical AND.
 
-17. Filtrowanie wielu właściwości
-Jeżeli istnieje kilka aktywnych filtrów, są one łączone operatorem logicznym AND.
-
-Przykładowo:
-
+Example:
+```
 Name contains "Jan"
 AND
 Age >= 18
 AND
 IsActive == true
-
-jest reprezentowane jako jedno wyrażenie:
-
+```
+corresponds to:
+```
 Name.Contains("Jan")
     &&
 Age >= 18
     &&
 IsActive == true
+```
+### 16. IEnumerable
+The library supports sources located in memory.
 
-18. IEnumerable i IQueryable
-Biblioteka rozróżnia dwa podstawowe rodzaje źródeł.
-
-IEnumerable
-Przykład:
-
+Example:
+```
 List<Product> products;
-
-Filtrowanie wykonywane jest przez:
-
-EnumerableDataSourceAdapter<Product>
-
-i LINQ to Objects.
-
-Schemat:
-
+```
+Flow:
+```
 IEnumerable<Product>
-       │
-       ▼
+        │
+        ▼
 EnumerableDataSourceAdapter<Product>
-       │
-       ▼
-Expression.Compile()
-       │
-       ▼
-Where(...)
+        │
+        ▼
+LINQ to Objects
+        │
+        ▼
+Filtered result
+```
+This allows filtering of, among others:
+```
+List<T>
+IEnumerable<T>
+```
+in-memory collections.
 
-IQueryable
-Przykład:
-
-IQueryable<Product> products;
-
-Filtrowanie wykonywane jest przez:
-
-QueryableDataSourceAdapter<Product>
-
-Schemat:
-
+### 17. IQueryable
+The library also supports:
+```
 IQueryable<Product>
-       │
-       ▼
+```
+Flow:
+```
+IQueryable<Product>
+        │
+        ▼
 QueryableDataSourceAdapter<Product>
-       │
-       ▼
-Expression<Func<Product, bool>>
-       │
-       ▼
+        │
+        ▼
+Expression<Func<Product,bool>>
+        │
+        ▼
 Queryable.Where(...)
+```
+For IQueryable, the filter remains an expression tree.
+This allows the LINQ provider to decide how the expression should be executed.
+For example, a database provider can translate the expression into an SQL query.
 
-Pozwala to pozostawić wyrażenie jako expression tree dla dostawcy IQueryable.
-
-19. BindingSource
-GridFilter może pracować również ze źródłem opakowanym w BindingSource.
-
-BindingSourceResolver rozwiązuje zagnieżdżone BindingSource.
-
-Przykład:
-
+### 18. BindingSource
+GridFilter can work with a source:
+```
 BindingSource
-     │
-     ▼
+```
+It can also resolve nested BindingSource:
+```
 BindingSource
-     │
-     ▼
+      │
+      ▼
+BindingSource
+      │
+      ▼
 List<Product>
+```
+Mechanism:
+```
+DataGridView
+      │
+      ▼
+GridFilter
+      │
+      ▼
+BindingSource
+      │
+      ▼
+BindingSourceResolver
+      │
+      ▼
+actual source
+```
+If DataGridView.DataSource is not a BindingSource, GridFilter can create its own BindingSource.
+After disabling the filter, the original data source is restored.
 
-ostatecznie prowadzi do:
+### 19. Enable / Disable
+Enable:
+```
+_gridFilter.Enable();
+```
+Disable:
+```
+_gridFilter.Disable();
+```
+Enable():
+- checks the DataSource,
+- prepares the BindingSource,
+- creates the FilterContext,
+- creates the filter panel,
+- creates the controls,
+- attaches events,
+- synchronizes control positions with columns.
 
-List<Product>
+Disable():
+- detaches events,
+- removes the panel,
+- releases the controls,
+- restores the previous DataSource.
 
-Dzięki temu filtr nie musi być bezpośrednio podłączony do końcowego źródła danych.
+### 20. SetFilter
+Filters can also be set programmatically:
+```
+_gridFilter.SetFilter(
+    "Price",
+    FilterOperator.GreaterThan,
+    100m);
+```
+It is therefore possible to combine:
+```
+user filters
++
+programmatically configured filters
+```
+The mechanism stores active filters by property name.
 
-20. CustomColumn
-CustomColumn<TData, TView> służy do wyświetlania złożonego widoku WinForms w pojedynczej komórce.
+## 21. CustomColumn
+CustomColumn<TData,TView> allows a custom WinForms view to be displayed inside an individual cell.
+It is not simply text or a standard DataGridViewCell.
 
-Przykładowy model:
+Architecture:
+```
+TData
+  │
+  ▼
+CustomColumn<TData,TView>
+  │
+  ├── TView
+  ├── ControlRenderHost
+  ├── BitmapCache
+  ├── KeySelector
+  └── GridPropertyMetadata
+```
+The most important feature is the ability to use an existing UserControl as the cell renderer.
 
+### 22. ICustomColumnData
+The model used by CustomColumn must implement:
+```
+public interface ICustomColumnData
+{
+    int Id { get; set; }
+}
+```
+Example:
+```
 public class Person : ICustomColumnData
 {
     public int Id { get; set; }
@@ -738,53 +745,16 @@ public class Person : ICustomColumnData
 
     public bool IsActive { get; set; }
 }
+```
+Id is the primary element identifying the data for the cache.
 
-Widok:
+### 23. IGridView<TData>
+The view must:
+- inherit from Control,
+- implement IGridView<TData>.
 
-public class PersonView :
-    UserControl,
-    IGridView<Person>
-{
-    public void SetData(Person data)
-    {
-        // przygotowanie widoku
-    }
-}
-
-21. ICustomColumnData
-Model używany przez CustomColumn musi implementować:
-
-public interface ICustomColumnData
-{
-    int Id { get; set; }
-}
-
-Id jest wykorzystywane jako podstawowy element klucza cache.
-
-Przykład:
-
-public class Person : ICustomColumnData
-{
-    public int Id { get; set; }
-
-    public string Name { get; set; }
-
-    public string Address { get; set; }
-}
-
-Założenie:
-
-Id → jednoznaczna identyfikacja reprezentacji wizualnej danych
-
-22. IGridView<TData>
-Widok TView musi:
-
-dziedziczyć po Control,
-
-implementować IGridView<TData>.
-
-Przykład:
-
+Example:
+```
 public class PersonView :
     UserControl,
     IGridView<Person>
@@ -793,54 +763,50 @@ public class PersonView :
     {
         nameLabel.Text = data.Name;
         addressLabel.Text = data.Address;
+
+        statusLabel.Text =
+            data.IsActive
+                ? "Active"
+                : "Inactive";
     }
 }
+```
+SetData() prepares the shared renderer for displaying a specific object.
 
-SetData() przygotowuje współdzielony widok do renderowania konkretnego obiektu.
+### 24. One TView Instance
+CustomColumn has one shared instance:
+```
+View = new TView();
+```
+A control is not created for every cell.
 
-23. Współdzielony TView
-CustomColumn posiada jedną instancję TView.
-
-Model:
-
+For:
+```
+1000 rows
+```
+this does not result in:
+```
+1000 × TView
+```
+but:
+```
+1 × TView
+1 × BitmapCache
+```
+Flow:
+```
 CustomColumn
       │
       └── TView
+```
+The instance is shared during subsequent rendering operations.
+This significantly reduces the number of WinForms controls and the associated memory overhead.
 
-a nie:
+### 25. TView as a Renderer
+TView should be treated as a temporary renderer.
 
-CustomColumn
-      │
-      ├── TView #1
-      ├── TView #2
-      ├── TView #3
-      └── TView #4
-
-Dla dużej liczby wierszy ma to istotne znaczenie.
-
-Przykład:
-
-1000 wierszy
-1000 komórek CustomColumn
-
-             ↓
-
-1 współdzielony TView
-1 BitmapCache
-
-zamiast:
-
-1000 wierszy
-
-             ↓
-
-1000 instancji TView
-
-24. TView jako renderer
-Współdzielony TView należy traktować jako tymczasowy renderer.
-
-Przepływ:
-
+Example:
+```
 TView
   │
   ▼
@@ -852,7 +818,7 @@ Render
   ▼
 Bitmap
 
-następnie:
+then:
 
 TView
   │
@@ -864,64 +830,47 @@ Render
   │
   ▼
 Bitmap
+```
+The state of TView does not represent a specific cell.
 
-Stan TView nie jest stanem konkretnej komórki.
+The result is a bitmap stored in the cache.
 
-Wynikiem pracy renderera jest bitmapa znajdująca się w cache.
+### 26. ControlRenderHost
+ControlRenderHost is responsible for rendering a control to a Bitmap.
+It is responsible, among other things, for:
+- hosting TView,
+- setting the size,
+- performing layout,
+- preparing the control,
+- DrawToBitmap(),
+- returning the generated bitmap.
 
-25. AncherRenderHost
-AncherRenderHost jest odpowiedzialny za faktyczne renderowanie TView do Bitmap.
+Depending on the library version, the rendering infrastructure may also be referred to as AncherRenderHost.
 
-Architektura rozdziela odpowiedzialności:
+Architecture:
+```
+CustomColumn
+      │
+      ▼
+TView
+      │
+      ▼
+ControlRenderHost
+      │
+      ├── attach
+      ├── Size
+      ├── Layout
+      └── DrawToBitmap()
+              │
+              ▼
+           Bitmap
+```           
+### 27. CustomColumn Initialization
+When using CustomColumn, the rendering host must be prepared.
 
-CustomCell
-    │
-    │ kiedy renderować?
-    ▼
-AncherRenderHost
-    │
-    │ jak wyrenderować?
-    ▼
-Bitmap
-
-AncherRenderHost odpowiada za:
-
-hostowanie TView,
-
-ustawienie rozmiaru,
-
-wykonanie layoutu,
-
-przygotowanie kontrolki,
-
-wykonanie DrawToBitmap(),
-
-zwrócenie Bitmap.
-
-Przepływ:
-
-CustomCell
-     │
-     ▼
-AncherRenderHost.Render(...)
-     │
-     ├── attach TView
-     ├── Size
-     ├── Layout
-     ├── DrawToBitmap()
-     │
-     ▼
-  Bitmap
-
-Dlatego ControlRenderHost / AncherRenderHost jest wymaganym elementem infrastruktury CustomColumn.
-
-26. Inicjalizacja CustomColumn
-Jeżeli GridProperty korzysta z CustomColumn, należy utworzyć również host renderowania.
-
-Przykład:
-
+Example:
+```
 private readonly ControlRenderHost _renderHost;
-private readonly GridProperty _gridProperty;
 
 public Form1()
 {
@@ -935,111 +884,138 @@ public Form1()
             dataGridView1,
             _renderHost);
 }
+```
+GridProperty can then create the appropriate CustomColumn.
 
-W zależności od wersji biblioteki konkretna nazwa klasy hosta może być ControlRenderHost lub AncherRenderHost.
+### 28. CustomColumn Metadata
+CustomColumn implements:
+```
+IGridPropertyMetadataProvider
+```
+and has:
+```
+public GridPropertyMetadata PropertyMetadata
+{
+    get;
+    private set;
+}
+```
+The metadata is created based on the TData property.
 
-27. Przepływ CustomCell.Paint()
-Najważniejszym miejscem działania CustomColumn jest CustomCell.Paint().
+The constructor searches for:
+```
+typeof(TData).GetProperty(propertyName)
+```
+and then retrieves:
+```
+GridViewAttribute
+```
+and creates:
+```
+new GridPropertyMetadata(
+    property,
+    attribute);
+```
+DataPropertyName is set to:
+```
+PropertyMetadata.PropertyName
+```
+This keeps CustomColumn connected to the model property in the same way as the other column types.
 
-Przepływ:
+### 29. KeySelector
+CustomColumn has:
+```
+Func<TData, object> KeySelector
+```
+By default:
+```
+KeySelector = value => value;
+```
+The mechanism allows customization of how data is identified when building the cache key.
+This is an extension point for more advanced scenarios.
 
+### 30. CustomCell.Paint()
+CustomCell is responsible for integrating the renderer with DataGridView.
+
+Flow:
+```
 Paint()
    │
-   ├── pobranie CustomColumn
+   ├── get CustomColumn
    │
-   ├── standardowe elementy DataGridView
+   ├── get TData
    │
-   ├── pobranie TData
+   ├── create BitmapCacheKey
    │
-   ├── utworzenie BitmapCacheKey
+   ├── Cache.TryGet()
    │
-   └── Cache.TryGet()
-             │
-             ├── HIT
-             │    │
-             │    └── DrawImage()
-             │
-             └── MISS
-                  │
-                  ├── View.SetData(data)
-                  │
-                  ├── RenderHost.Render(View)
-                  │
-                  ├── Cache.Set(bitmap)
-                  │
-                  ├── Cache.TryGet()
-                  │
-                  └── DrawImage()
-
-28. Cache HIT
-Jeżeli obraz znajduje się w cache:
-
-column.Cache.TryGet(key, out bitmap)
-
-jest wykonywane tylko:
-
+   ├── HIT
+   │     └── DrawImage()
+   │
+   └── MISS
+         │
+         ├── View.SetData(data)
+         ├── RenderHost.Render(View)
+         ├── Cache.Set(bitmap)
+         ├── Cache.TryGet()
+         └── DrawImage()
+```
+### 31. Cache HIT
+If the bitmap is already in the cache:
+```
 Cache
- ↓
+  │
+  ▼
 Bitmap
- ↓
+  │
+  ▼
 DrawImage()
+```
+the following operations are not performed again:
+```
+View.SetData()
+RenderHost.Render()
+```
+This is the most important optimization of CustomColumn.
 
-Nie wykonujemy:
-
-View.SetData(...)
-
-ani:
-
-RenderHost.Render(...)
-
-Jest to podstawowa optymalizacja mechanizmu.
-
-29. Cache MISS
-Jeżeli obrazu nie ma w cache:
-
+### 32. Cache MISS
+If the image is not in the cache:
+```
 Cache.TryGet()
       │
       ▼
-    MISS
+     MISS
       │
       ▼
 View.SetData(data)
       │
       ▼
-RenderHost.Render(...)
+RenderHost.Render()
       │
       ▼
 Bitmap
       │
       ▼
 Cache.Set()
-
-Po zapisaniu bitmapy do cache pobierana jest niezależna instancja bitmapy:
-
-Cache
-  │
-  ▼
-byte[]
-  │
-  ▼
-Bitmap
-  │
-  ▼
+      │
+      ▼
 DrawImage()
+```
+Rendering is primarily performed on the first use of a specific image version.
 
-30. BitmapCache
-BitmapCache przechowuje wyniki renderowania.
+### 33. BitmapCache
+BitmapCache stores the rendering result.
 
-Cache nie przechowuje bezpośrednio:
-
+The cache should not store objects directly:
+```
 Bitmap
-
-lecz dane obrazu:
-
+```
+but rather:
+```
 byte[]
-
-Schemat:
-
+```
+Storage:
+```
 Bitmap
    │
    ▼
@@ -1050,9 +1026,9 @@ byte[]
    │
    ▼
 BitmapCache
-
-Przy odczycie:
-
+```
+Reading:
+```
 BitmapCache
    │
    ▼
@@ -1063,14 +1039,20 @@ Decode
    │
    ▼
 Bitmap
+```
+### 34. Why Does the Cache Store byte[]?
+Bitmap is a GDI+ object and owns native resources.
 
-31. Dlaczego cache przechowuje byte[]?
-Dzięki temu cache nie przechowuje bezpośrednio obiektów GDI+.
+Storing encoded data:
+```
+byte[]
+```
+allows the lifetime of the cache entry to be separated from the temporary Bitmap instance.
 
-Bitmap zwrócona przez TryGet() jest tymczasowa i powinna zostać zwolniona przez kod, który jej używa.
+The bitmap retrieved from the cache should be disposed by the code that uses it.
 
-Przykład:
-
+Example:
+```
 if (column.Cache.TryGet(key, out Bitmap bitmap))
 {
     using (bitmap)
@@ -1080,17 +1062,15 @@ if (column.Cache.TryGet(key, out Bitmap bitmap))
             cellBounds);
     }
 }
-
-32. LRU Cache
-BitmapCache wykorzystuje mechanizm:
-
+```
+### 35. LRU Cache
+BitmapCache uses:
+```
 LRU
 Least Recently Used
-
-Po użyciu element jest przesuwany na początek listy.
-
-Jeżeli przekroczony zostanie limit pamięci, usuwane są najmniej używane wpisy.
-
+```
+The most frequently used elements remain at the beginning of the structure.
+```
 MOST RECENT
     │
     ▼
@@ -1101,135 +1081,113 @@ MOST RECENT
     │
     ▼
 LEAST RECENT
+```
+When the memory limit is exceeded, the least recently used entries are removed.
 
-Przy przekroczeniu limitu usuwany jest wpis z końca.
-
-33. Limit pamięci
-Cache posiada limit pamięci określany przez MaxMemoryMB.
-
-Przykład:
-
-new BitmapCache(20)
-
-oznacza limit około:
-
+### 36. Memory Limit
+The cache has a limit defined by:
+```
+MaxMemoryMB
+```
+Example:
+```
+new BitmapCache(20);
+```
+means approximately:
+```
 20 MB
+```
+allocated for encoded image data.
 
-zakodowanych danych obrazu.
+If a single image is larger than the entire available limit, it may be skipped.
 
-Jeżeli pojedynczy obraz przekracza cały dostępny limit, może zostać pominięty:
+### 37. BitmapCacheKey
+The cache key should identify a specific version of an image.
 
-image > MaxMemoryBytes
-        │
-        ▼
-   nie zapisuj
-
-34. BitmapCacheKey
-Klucz cache identyfikuje konkretną wersję obrazu.
-
-Przykładowo:
-
+For example:
+```
 new BitmapCacheKey(
     data.Id,
     cellBounds.Size,
     ImageFormat.Png,
     90L);
+```
+The image then depends, among other things, on:
+- Id
+- Size
+- ImageFormat
+- Quality
 
-Wynik renderowania zależy więc od:
-
-Id
-Size
-ImageFormat
-Quality
-
-Przykładowo ten sam obiekt może posiadać:
-
+The same object:
+```
 Id = 10
-Size = 200x80
+```
+can therefore have different entries:
+```
+10 + 200x80
+10 + 300x100
+```
+### 38. Data Changes and Cache
+Id alone does not guarantee that the image is still current.
 
-oraz:
-
+If:
+```
 Id = 10
-Size = 300x100
+```
+remains the same, but the visual data changes:
+```
+Name
+Address
+Status
+...
+```
+the old bitmap may still be present in the cache.
 
-jako dwa niezależne wpisy cache.
-
-35. Zmiana danych a cache
-Id identyfikuje dane w cache.
-
-Jeżeli:
-
-Id = 10
-
-pozostaje takie samo, ale zmieniają się dane wizualne obiektu, istnieje możliwość użycia starej bitmapy.
-
-Dlatego należy stosować jedną z zasad:
-
-Dane niemutowalne
-Po utworzeniu obiektu jego dane wizualne nie zmieniają się.
-
-Unieważnianie cache
-Po zmianie danych usuwany jest odpowiedni wpis cache.
-
-Wersjonowanie
-Klucz można rozszerzyć:
-
+One of the following methods should then be used:
+```
+Immutable data
+```
+After the object is created, visual data is not modified.
+```
+Cache invalidation
+```
+After changing the data, the appropriate entry is removed.
+```
+Versioning
+```
+The key can contain:
+```
 Id + Version + Size + Format + Quality
+```
+### 39. Paint() Performance
+DataGridView.Paint() can be called many times.
 
-36. Paint() i wydajność
-Paint() może być wywoływany wielokrotnie przez WinForms.
+The following should not be performed inside Paint():
+- database queries,
+- long-running I/O,
+- business operations,
+- data loading,
+- expensive operations.
 
-Nie należy wykonywać w nim:
-
-operacji biznesowych,
-
-zapisu danych,
-
-długotrwałego I/O,
-
-zapytań do bazy danych,
-
-ładowania danych z zewnętrznych źródeł.
-
-Przykładowo przewijanie DataGridView może powodować wielokrotne wywołanie Paint().
-
-Dlatego:
-
+Desired flow:
+```
 CACHE HIT
-    ↓
+    │
+    ▼
 DrawImage()
+```
+should be as fast as possible.
 
-powinien być szybki.
-
-37. Renderowanie tylko przy CACHE MISS
-Podstawowa zasada CustomColumn:
-
-CACHE HIT
-    │
-    ├── brak SetData()
-    ├── brak Render()
-    └── DrawImage()
-
-oraz:
-
-CACHE MISS
-    │
-    ├── SetData()
-    ├── Render()
-    ├── Cache.Set()
-    └── DrawImage()
-
-Koszt renderowania jest więc ponoszony przede wszystkim podczas pierwszego wygenerowania konkretnej wersji obrazu.
-
-38. Cykl życia Bitmap
-Renderowanie
+### 40. Bitmap Lifecycle
+Rendering:
+```
 TView
   │
   ▼
 RenderHost
   │
   ▼
-Bitmap rendered
+Bitmap
   │
   ▼
 BitmapCache.Set()
@@ -1242,10 +1200,11 @@ byte[]
   │
   ▼
 Cache
+```
+The bitmap used to store the data can then be released.
 
-Bitmapa rendered może zostać następnie zwolniona.
-
-Wyświetlanie
+Display:
+```
 Cache
   │
   ▼
@@ -1262,80 +1221,14 @@ Graphics.DrawImage()
   │
   ▼
 Dispose()
+```
+### 41. CustomColumn Concurrency
+TView is a WinForms control and one instance is shared.
 
-39. Odpowiedzialności komponentów CustomColumn
-CustomColumn<TData, TView>
-Odpowiada za:
+Therefore, the renderer should not be used concurrently from multiple threads.
 
-konfigurację kolumny,
-
-współdzielony TView,
-
-AncherRenderHost,
-
-BitmapCache,
-
-opcjonalny KeySelector.
-
-CustomCell<TData, TView>
-Odpowiada za:
-
-Paint(),
-
-pobranie danych,
-
-utworzenie BitmapCacheKey,
-
-sprawdzenie cache,
-
-uruchomienie renderowania przy MISS,
-
-narysowanie bitmapy.
-
-TView
-Odpowiada za:
-
-prezentację TData,
-
-przygotowanie stanu przez SetData(),
-
-wygląd widoku,
-
-działanie jako zwykła kontrolka WinForms.
-
-AncherRenderHost
-Odpowiada wyłącznie za:
-
-hostowanie TView,
-
-rozmiar,
-
-layout,
-
-renderowanie do Bitmap.
-
-BitmapCache
-Odpowiada za:
-
-przechowywanie wyników renderowania,
-
-LRU,
-
-limit pamięci,
-
-kodowanie bitmap,
-
-dekodowanie bitmap.
-
-40. Współbieżność CustomColumn
-Współdzielony TView oznacza, że renderer nie powinien być używany równolegle.
-
-TView jest kontrolką WinForms, a jego stan jest zmieniany przez:
-
-View.SetData(data);
-
-Dlatego standardowy renderowanie miałoby zostać przeniesione do wielu wątków, potrzebna byłaby zmiana architektury lub osobne instancje renderer model:
-
+Typical flow:
+```
 UI thread
     │
     ▼
@@ -1346,162 +1239,100 @@ SetData()
     │
     ▼
 Render()
+```
+is consistent with the architectural assumptions.
 
-jest zgodny z założeniem architektury.
+If rendering were to be performed concurrently, the architecture would need to be changed or separate renderer instances would need to be used.
 
-Nie należy wykonywać równoległego renderowania tego samego CustomColumn z wielu wątków bez dodatkowej synchronizacji.
+### 42. Advantages of CustomColumn
+CustomColumn allows existing WinForms controls to be used as cell content.
 
-Jeżeli renderowanie miałoby zostać przeniesione do wielu wątków, potrzebna byłaby zmiana architektury lub osobne instancje rendererów.
+It is therefore possible to create cells containing:
+```
+┌──────────────────────────────┐
+│ John Smith                   │
+│ 10 Piotrkowska St.           │
+│ Pabianice                    │
+│ ● Active                     │
+└──────────────────────────────┘
+```
+without creating a separate UserControl for every row.
 
-41. Kompletny przykład
-Poniższy przykład łączy:
+The most important advantages:
+- reuse of existing UserControls,
+- one TView instance,
+- rendering to bitmap,
+- result caching,
+- LRU,
+- memory limit,
+- custom key support,
+- integration with GridProperty,
+- ability to display very complex UI elements.
 
-GridProperty,
-
-GridViewAttribute,
-
-GridAction,
-
-CustomColumn,
-
-GridFilter.
-
-Model
+### 43. Complete Data Model
+Example:
+```
 public class Product : ICustomColumnData
 {
     public int Id { get; set; }
 
-    [GridView("Nazwa")]
+    [GridView("Name")]
     public string Name { get; set; }
 
     [GridView(
-        "Cena",
+        "Price",
         columnType: GridViewAttribute.EColumnType.Number,
         format: "N2")]
     public decimal Price { get; set; }
 
     [GridView(
-        "Aktywny",
+        "Active",
         columnType: GridViewAttribute.EColumnType.Boolean)]
     public bool IsActive { get; set; }
 
     [GridView(
-        "Opis",
+        "Description",
         columnType: GridViewAttribute.EColumnType.MemoEdit)]
     public string Description { get; set; }
 
     [GridView(
-        "Utworzono",
+        "Created",
         columnType: GridViewAttribute.EColumnType.Date)]
     public DateTime CreatedAt { get; set; }
 
     [GridView(
-        "Edytuj",
+        "Edit",
         columnType: GridViewAttribute.EColumnType.Button,
         actionName: "Edit")]
     public string Edit { get; set; }
 }
-
-42. Widok CustomColumn
+```
+### 44. CustomColumn View
+```
 public class ProductView :
     UserControl,
     IGridView<Product>
 {
     public void SetData(Product data)
     {
-        nameLabel.Text = data.Name;
+        nameLabel.Text =
+            data.Name;
+
         priceLabel.Text =
             data.Price.ToString("N2");
 
         statusLabel.Text =
             data.IsActive
-                ? "Aktywny"
-                : "Nieaktywny";
+                ? "Active"
+                : "Inactive";
     }
 }
-
-43. Inicjalizacja formularza
-public partial class Form1 : Form
-{
-    private readonly GridProperty _gridProperty;
-
-    private readonly List<Product> _products =
-        new List<Product>();
-
-    public Form1()
-    {
-        InitializeComponent();
-
-        var renderHost =
-            new ControlRenderHost();
-
-        _gridProperty =
-            new GridProperty(
-                dataGridView1,
-                renderHost);
-
-        InitializeGrid();
-    }
-
-    private void InitializeGrid()
-    {
-        _gridProperty.InitData<Product>();
-
-        _gridProperty
-            .GetAction<Product>("Edit")
-            .Click += Edit_Click;
-
-        dataGridView1.DataSource =
-            _products;
-    }
-
-    private void Edit_Click(
-        object sender,
-        GridActionEventArgs<Product> e)
-    {
-        Product product = e.Item;
-
-        MessageBox.Show(
-            product.Name,
-            "Edycja");
-    }
-}
-
-Jeżeli aplikacja korzysta z GridFilter, może dodatkowo zainicjalizować:
-
-private GridFilter _gridFilter;
-
-oraz:
-
-_gridFilter =
-    new GridFilter(dataGridView1);
-
-_gridFilter.Enable();
-
-44. Zalecana kolejność inicjalizacji
-W typowym formularzu kolejność powinna być następująca:
-
-1. InitializeComponent()
-        │
-        ▼
-2. Utworzenie RenderHost
-        │
-        ▼
-3. Utworzenie GridProperty
-        │
-        ▼
-4. InitData<T>()
-        │
-        ▼
-5. Podpięcie GridAction
-        │
-        ▼
-6. Ustawienie DataSource
-        │
-        ▼
-7. Opcjonalnie GridFilter
-
-Przykład:
+```
+### 45. GridProperty Initialization
+When CustomColumn is used, a ControlRenderHost must be prepared:
+```
+private readonly GridProperty _gridProperty;
+private readonly GridFilter _gridFilter;
 
 public Form1()
 {
@@ -1530,29 +1361,91 @@ public Form1()
     _gridFilter.Enable();
 }
 
-45. Minimalny przykład bez CustomColumn
-Jeżeli aplikacja nie potrzebuje własnych widoków, wystarczy GridProperty.
+46. Action Handling
+private void Edit_Click(
+    object sender,
+    GridActionEventArgs<Product> e)
+{
+    Product product = e.Item;
 
+    MessageBox.Show(
+        product.Name,
+        "Edit");
+}
+```
+### 47. Recommended Initialization Order
+A typical form should perform:
+```
+1. InitializeComponent()
+        │
+        ▼
+2. ControlRenderHost
+        │
+        ▼
+3. GridProperty
+        │
+        ▼
+4. InitData<T>()
+        │
+        ▼
+5. GridAction
+        │
+        ▼
+6. DataSource
+        │
+        ▼
+7. GridFilter
+```
+Example:
+```
+public Form1()
+{
+    InitializeComponent();
+
+    var renderHost =
+        new ControlRenderHost();
+
+    _gridProperty =
+        new GridProperty(
+            dataGridView1,
+            renderHost);
+
+    _gridProperty.InitData<Product>();
+
+    _gridProperty
+        .GetAction<Product>("Edit")
+        .Click += Edit_Click;
+
+    dataGridView1.DataSource =
+        _products;
+
+    _gridFilter =
+        new GridFilter(dataGridView1);
+
+    _gridFilter.Enable();
+}
+```
+### 48. Minimal Example Without CustomColumn
+If the application does not require complex views:
+```
 public class Person
 {
-    [GridView("Imię")]
+    [GridView("Name")]
     public string Name { get; set; }
 
     [GridView(
-        "Wiek",
+        "Age",
         columnType: GridViewAttribute.EColumnType.Number)]
     public int Age { get; set; }
 
     [GridView(
-        "Aktywny",
+        "Active",
         columnType: GridViewAttribute.EColumnType.Boolean)]
     public bool IsActive { get; set; }
 }
-
-Formularz:
-
-private readonly GridProperty _gridProperty;
-
+```
+Form:
+```
 public Form1()
 {
     InitializeComponent();
@@ -1565,32 +1458,32 @@ public Form1()
     dataGridView1.DataSource =
         new List<Person>();
 }
-
-46. Minimalny przykład z akcją
+```
+### 49. Minimal Action Example
 Model:
-
+```
 public class Person
 {
-    [GridView("Imię")]
+    [GridView("Name")]
     public string Name { get; set; }
 
     [GridView(
-        "Edytuj",
+        "Edit",
         columnType: GridViewAttribute.EColumnType.Button,
         actionName: "Edit")]
     public string Edit { get; set; }
 }
-
-Kod:
-
+```
+Code:
+```
 _gridProperty.InitData<Person>();
 
 _gridProperty
     .GetAction<Person>("Edit")
     .Click += Edit_Click;
-
+```    
 Handler:
-
+```
 private void Edit_Click(
     object sender,
     GridActionEventArgs<Person> e)
@@ -1598,121 +1491,66 @@ private void Edit_Click(
     MessageBox.Show(
         e.Item.Name);
 }
-
-47. Minimalny przykład CustomColumn
+```
+### 50. Minimal CustomColumn Example
 Model:
-
+```
 public class Person : ICustomColumnData
 {
     public int Id { get; set; }
 
     public string Name { get; set; }
 }
-
-Widok:
-
+```
+View:
+```
 public class PersonView :
     UserControl,
     IGridView<Person>
 {
     public void SetData(Person data)
     {
-        nameLabel.Text = data.Name;
+        nameLabel.Text =
+            data.Name;
     }
 }
-
-Architektura:
-
+```
+Architecture:
+```
 Person
   │
   ▼
 CustomColumn<Person, PersonView>
   │
   ├── PersonView
-  ├── AncherRenderHost
+  ├── ControlRenderHost
   └── BitmapCache
-          │
-          ▼
-     DataGridView
-
-48. Minimalny przykład filtrowania
-Przykładowa definicja:
-
-var filter =
-    new FilterDefinition(
-        "Name",
-        FilterOperator.Contains,
-        "Jan");
-
-Możliwe jest również filtrowanie wartości liczbowych:
-
-var filter =
-    new FilterDefinition(
-        "Price",
-        FilterOperator.GreaterThan,
-        100m);
-
-lub wartości null:
-
-var filter =
-    new FilterDefinition(
-        "Description",
-        FilterOperator.IsNull);
-
-49. Jak elementy biblioteki współpracują ze sobą?
-Cała biblioteka może być przedstawiona jako trzy niezależne, ale współpracujące warstwy.
-
-Warstwa konfiguracji
-GridViewAttribute
-       │
-       ▼
-GridProperty
-       │
-       ▼
-DataGridView
-
-Odpowiada za to jak wygląda tabela.
-
-Warstwa danych
-GridFilter
-    │
-    ▼
-FilterDefinition
-    │
-    ▼
-FilterExpressionBuilder
-    │
-    ▼
-IDataSourceAdapter
-    │
-    ├── IEnumerable
-    └── IQueryable
-
-Odpowiada za to jak dane są filtrowane.
-
-Warstwa prezentacji złożonej
-TData
-  │
-  ▼
-CustomColumn
-  │
-  ▼
-TView
-  │
-  ▼
-AncherRenderHost
-  │
-  ▼
-BitmapCache
-  │
-  ▼
-DataGridView
-
-Odpowiada za to jak złożona zawartość jest prezentowana w komórce.
-
-50. Pełny przepływ danych
-Przy zastosowaniu wszystkich elementów:
-
+```
+### 51. Minimal Filtering Example
+Programmatic filtering:
+```
+_gridFilter.SetFilter(
+    "Name",
+    FilterOperator.Contains,
+    "Jan");
+```
+Numeric filtering:
+```
+_gridFilter.SetFilter(
+    "Price",
+    FilterOperator.GreaterThan,
+    100m);
+```
+Null filtering:
+```
+_gridFilter.SetFilter(
+    "Description",
+    FilterOperator.IsNull,
+    null);
+```
+52. Complete Data Flow
+The entire library can be represented as follows:
+```
                          MODEL
                            │
                            ▼
@@ -1724,237 +1562,353 @@ Przy zastosowaniu wszystkich elementów:
                           ▼
                     DataGridView
                           │
-             ┌────────────┼────────────┐
-             │            │            │
-             ▼            ▼            ▼
+             ┌────────────┼─────────────┐
+             │            │             │
+             ▼            ▼             ▼
           standard      Button      CustomColumn
-          columns          │            │
-             │             ▼            ▼
-             │        GridAction      TView
-             │                          │
-             │                          ▼
-             │                    RenderHost
-             │                          │
-             │                          ▼
-             │                     BitmapCache
-             │                          │
+          columns         │             │
+             │            ▼             ├── TView
+             │       GridAction          ├── RenderHost
+             │                           ├── BitmapCache
+             │                           └── PropertyMetadata
+             │
              └────────────┬─────────────┘
                           │
                           ▼
                      GridFilter
                           │
                           ▼
-                 FilterDefinition
+                    BindingSource
                           │
                           ▼
-               FilterExpressionBuilder
+                 BindingSourceResolver
                           │
                           ▼
-                 IDataSourceAdapter
-                          │
-                   ┌──────┴──────┐
-                   ▼             ▼
-              IEnumerable   IQueryable
-
-51. Odpowiedzialność biblioteki
-Biblioteka celowo rozdziela trzy problemy:
-
+                IDataSourceAdapter
+                    │             │
+                    ▼             ▼
+               IEnumerable    IQueryable
+```
+## 53. Component Responsibilities
 GridProperty
-    → konfiguracja UI
+Responsible for:
+- DataGridView configuration,
+- column creation,
+- using GridViewAttribute,
+- formatting,
+- editing,
+- buttons,
+- actions,
+- CustomColumn integration.
 
 GridFilter
-    → filtrowanie danych
+Responsible for:
+- filtering interface,
+- FilterDefinition,
+- FilterOperator,
+- filtering multiple properties,
+- IEnumerable,
+- IQueryable,
+- BindingSource,
+- updating the data source.
 
 CustomColumn
-    → renderowanie złożonego UI
+Responsible for:
+- integration with DataGridViewColumn,
+- TView,
+- PropertyMetadata,
+- RenderHost,
+- BitmapCache,
+- KeySelector.
 
-Dzięki temu aplikacja może używać:
+CustomCell
+Responsible for:
+- Paint(),
+- retrieving data,
+- building the cache key,
+- Cache.TryGet(),
+- handling HIT/MISS,
+- drawing the bitmap.
 
-GridProperty
-
-bez:
-
-GridFilter
-
-albo:
-
-GridProperty + GridFilter
-
-albo pełnego zestawu:
-
-GridProperty
-+ GridFilter
-+ CustomColumn
-
-Elementy nie muszą być używane wszystkie jednocześnie.
-
-52. Najważniejsze zasady CustomColumn
-TData musi implementować ICustomColumnData.
-
-Id jest podstawowym identyfikatorem cache.
-
-TView musi być Control.
-
-TView musi implementować IGridView<TData>.
-
-Jedna instancja TView jest współdzielona przez CustomColumn.
-
-TView powinien być traktowany jako renderer.
-
-SetData() jest wykonywane przy CACHE MISS.
-
-Renderowanie jest wykonywane przy CACHE MISS.
-
-BitmapCache przechowuje byte[], a nie Bitmap.
-
-Bitmapę zwróconą przez cache należy Dispose().
-
-Cache wykorzystuje LRU.
-
-Cache posiada limit pamięci.
-
-Zmiana danych przy tym samym Id wymaga unieważnienia cache albo wersjonowania.
-
-Paint() nie powinien wykonywać operacji biznesowych ani długotrwałego I/O.
-
-Współdzielony TView zakłada sekwencyjne używanie renderera.
-
-53. Najważniejsze zasady GridFilter
-Źródło danych może być IEnumerable lub IQueryable.
-
-FilterDefinition opisuje pojedynczy warunek.
-
-FilterOperator określa sposób porównania.
-
-Wiele filtrów jest łączonych przez AND.
-
-Contains, StartsWith i EndsWith dotyczą właściwości string.
-
-IsNull i IsNotNull służą do obsługi wartości pustych.
-
-Dla IEnumerable wykorzystywane jest LINQ to Objects.
-
-Dla IQueryable budowane jest Expression<Func<T, bool>>.
-
-BindingSourceResolver pozwala rozwiązać zagnieżdżone BindingSource.
-
-GridFilter jest opcjonalny.
-
-54. Najważniejsze zasady GridProperty
-Konfiguracja kolumn znajduje się przy modelu.
-
-GridViewAttribute określa sposób prezentacji właściwości.
-
-InitData<T>() inicjalizuje konfigurację DataGridView.
-
-GetAction<T>() pobiera akcję dla kolumny Button.
-
-GridAction<T>.Click obsługuje kliknięcie.
-
-GridActionEventArgs<T>.Item zawiera obiekt modelu.
-
-CustomColumn wymaga hosta renderowania.
-
-GridFilter może działać niezależnie od GridProperty, ale typowy scenariusz łączy oba komponenty.
-
-55. Najważniejszy model architektury
-Całą bibliotekę można sprowadzić do następującego modelu:
-
-                 ┌───────────────────────┐
-                 │        MODEL          │
-                 └───────────┬───────────┘
-                             │
-              ┌──────────────┼──────────────┐
-              │              │              │
-              ▼              ▼              ▼
-       GridProperty      GridFilter     CustomColumn
-              │              │              │
-              ▼              ▼              ▼
-        konfiguracja      filtrowanie      renderowanie
-              │              │              │
-              └──────────────┼──────────────┘
-                             │
-                             ▼
-                       DataGridView
-
-W przypadku CustomColumn:
-
-TData
-  │
-  ▼
-Cache Key
-  │
-  ▼
-BitmapCache
-  │
-  ├────────────── HIT ──────────────┐
-  │                                 │
-  └──────────── MISS                │
-                  │                 │
-                  ▼                 │
-              TView.SetData()       │
-                  │                 │
-                  ▼                 │
-          AncherRenderHost          │
-                  │                 │
-                  ▼                 │
-              Bitmap                │
-                  │                 │
-                  ▼                 │
-            BitmapCache             │
-                  │                 │
-                  └─────────────────┘
-                            │
-                            ▼
-                       DrawImage()
-                            │
-                            ▼
-                         Dispose
-
-56. Podsumowanie
-MC.Data.DataGrid jest biblioteką składającą się z trzech głównych obszarów:
-
-GridProperty
-Służy do konfiguracji DataGridView i definiowania jego kolumn poprzez model.
-
-Model → GridViewAttribute → GridProperty → DataGridView
-
-GridFilter
-Służy do filtrowania danych znajdujących się w IEnumerable lub IQueryable.
-
-FilterDefinition
-      ↓
-FilterExpressionBuilder
-      ↓
-IDataSourceAdapter
-      ↓
-Filtered DataSource
-
-CustomColumn
-Służy do renderowania złożonych widoków WinForms w komórkach.
-
-TData
-  ↓
 TView
-  ↓
-AncherRenderHost
-  ↓
-Bitmap
-  ↓
+Responsible for:
+- view appearance,
+- SetData(),
+- preparing renderer state.
+
+ControlRenderHost
+Responsible for:
+- hosting the control,
+- layout,
+- size,
+- DrawToBitmap().
+
 BitmapCache
-  ↓
-DataGridView
+Responsible for:
+- bitmap caching,
+- encoding,
+- decoding,
+- LRU,
+- memory limit.
 
-Najważniejszym założeniem CustomColumn jest:
+## 54. Most Important GridProperty Rules
+Column configuration is located next to the model.
+GridViewAttribute defines how a property is displayed.
+InitData<T>() initializes the configuration.
+GetAction<T>() retrieves a button action.
+GridActionEventArgs<T>.Item contains the model.
+CustomColumn can participate in the metadata system.
+CustomColumn requires a rendering host.
 
-TView = renderer
-BitmapCache = pamięć wyników
-CustomCell = integracja z DataGridView
-AncherRenderHost = mechanizm renderowania
+## 55. Most Important GridFilter Rules
+The source can be IEnumerable.
+The source can be IQueryable.
+BindingSource can be used.
+Nested BindingSource is supported.
+FilterDefinition describes a single condition.
+FilterOperator defines the operator.
+Multiple filters are combined using AND.
+bool has a dedicated ComboBox.
+enum has a dedicated ComboBox.
+DateTime uses the dd.MM.yyyy input format.
+TimeSpan uses the hh:mm:ss input format.
+IsNull and IsNotNull support empty values.
+SetFilter() allows programmatic filter control.
+Disable() restores the previous state of the data source.
 
-Dzięki temu nawet duża liczba wierszy nie wymaga tworzenia osobnej kontrolki WinForms dla każdej komórki.
+## 56. Most Important CustomColumn Rules
+TData must implement ICustomColumnData.
+TView must be a Control.
+TView must implement IGridView<TData>.
+TView is shared.
+TView should be treated as a renderer.
+SetData() prepares the renderer.
+Rendering is primarily performed on CACHE MISS.
+CACHE HIT should result in a fast DrawImage().
+BitmapCache stores byte[].
+The bitmap returned from the cache should be disposed.
+The cache uses LRU.
+The cache has a memory limit.
+BitmapCacheKey can include size and image parameters.
+KeySelector allows customization of data identification.
+Changing data with the same key requires cache invalidation or versioning.
+Paint() should not perform business operations or long-running I/O.
+The shared TView assumes sequential use of the renderer.
+CustomColumn implements IGridPropertyMetadataProvider.
 
-W typowym zastosowaniu aplikacja może ograniczyć się do:
+## 57. Advantages of the Library
+Less code
+
+Configuration can be located directly next to the model:
+```
+[GridView("Name")]
+public string Name { get; set; }
+```
+instead of manually configuring every column.
+
+Declarative approach
+
+The model describes how the data should be displayed.
+```
+Model
+  │
+  ├── column name
+  ├── column type
+  ├── format
+  ├── visibility
+  ├── editing
+  └── action
+```
+Reusability
+
+GridProperty, GridFilter, and CustomColumn can be used independently.
+
+Support for Different Data Sources
+
+The library can work with:
+```
+List<T>
+IEnumerable<T>
+IQueryable<T>
+BindingSource
+```
+Separation of Responsibilities
+```
+GridProperty
+    → configuration
+
+GridFilter
+    → filtering
+
+CustomColumn
+    → rendering
+```
+Each component has a clearly defined responsibility.
+
+Efficient CustomColumn
+
+Instead of:
+```
+1000 rows
+↓
+1000 UserControls
+```
+the following is used:
+```
+1000 rows
+↓
+1 shared TView
+↓
+BitmapCache
+```
+LRU Cache
+
+The most frequently used bitmaps remain in memory, while unused ones are automatically removed when the memory limit is exceeded.
+
+Memory Control
+
+The cache has a memory limit, allowing its size to be controlled by the application.
+
+No Need to Store Bitmaps
+
+The cache stores byte[] rather than GDI+ Bitmap objects.
+
+Extensibility
+
+Extension points include, among others:
+```
+IGridView<T>
+ICustomColumnData
+IGridPropertyMetadataProvider
+IDataSourceAdapter
+KeySelector
+GridViewAttribute
+FilterOperator
+FilterDefinition
+```
+## 58. Recommended Practices
+For GridProperty
+
+Keep presentation configuration next to the model:
+```
+[GridView(...)]
+```
+Instead of manually configuring columns in multiple forms.
+
+For GridFilter
+
+Set the DataSource before calling:
+```
+_gridFilter.Enable();
+```
+For CustomColumn
+
+Treat TView as a renderer rather than the state of a specific cell.
+
+For the Cache
+
+If data is mutable, plan a mechanism for:
+```
+invalidate
+```
+or:
+```
+versioning
+```
+For Paint()
+
+Avoid:
+```
+database query
+network I/O
+file I/O
+business logic
+```
+in the Paint() execution path.
+
+## 59. Full Architecture
+```
+                         ┌───────────────────────┐
+                         │        MODEL          │
+                         └───────────┬───────────┘
+                                     │
+                  ┌──────────────────┼──────────────────┐
+                  │                  │                  │
+                  ▼                  ▼                  ▼
+           GridViewAttribute   ICustomColumnData   PropertyInfo
+                  │                  │                  │
+                  ▼                  │                  ▼
+            GridProperty             │          GridPropertyMetadata
+                  │                  │                  │
+                  ▼                  │                  │
+            DataGridView             │                  │
+                  │                  │                  │
+       ┌──────────┼───────────┐     │                  │
+       │          │           │     │                  │
+       ▼          ▼           ▼     ▼                  ▼
+    Standard   Button    CustomColumn ──────────► PropertyMetadata
+       │          │           │
+       │          ▼           ├── TView
+       │     GridAction       ├── RenderHost
+       │                      ├── BitmapCache
+       │                      └── KeySelector
+       │
+       └──────────────────────────────┐
+                                      │
+                                      ▼
+                                 GridFilter
+                                      │
+                                      ▼
+                                 BindingSource
+                                      │
+                                      ▼
+                             BindingSourceResolver
+                                      │
+                                      ▼
+                              IDataSourceAdapter
+                                │             │
+                                ▼             ▼
+                           IEnumerable    IQueryable
+```
+## 60. Summary
+MC.Data.DataGrid combines three independent mechanisms:
+```
+GridProperty
+    ↓
+DataGridView configuration
+
+GridFilter
+    ↓
+data filtering
+
+CustomColumn
+    ↓
+complex UI rendering
+```
+The most important element of the CustomColumn architecture is the separation of:
+```
+TView
+    = renderer
+
+ControlRenderHost
+    = rendering mechanism
+
+BitmapCache
+    = result storage
+
+CustomCell
+    = DataGridView integration
+```
+This allows a complex WinForms view to be used as cell content without creating a separate control for every row.
+
+The entire library can be used both in simple forms:
+```
+_gridProperty =
+    new GridProperty(dataGridView1);
+
+_gridProperty.InitData<Person>();
+
+and in more advanced solutions:
 
 _gridProperty =
     new GridProperty(
@@ -1967,24 +1921,53 @@ _gridProperty
     .GetAction<Product>("Edit")
     .Click += Edit_Click;
 
+dataGridView1.DataSource =
+    products;
+
 _gridFilter =
     new GridFilter(dataGridView1);
 
 _gridFilter.Enable();
+```
+The architecture remains modular:
+```
+                MC.Data.DataGrid
+                       │
+        ┌──────────────┼──────────────┐
+        │              │              │
+        ▼              ▼              ▼
+  GridProperty     GridFilter    CustomColumn
+        │              │              │
+        ▼              ▼              ▼
+ configuration      filtering      rendering
+        │              │              │
+        └──────────────┼──────────────┘
+                       ▼
+                 DataGridView
+```
+The main idea of the library is to combine declarative configuration, flexible filtering, and efficient rendering of complex views while maintaining the standard DataGridView workflow in WinForms.
+## Requirements
 
-dataGridView1.DataSource =
-    products;
+- .NET Framework 4.8
+- C# or another compatible .NET development environment
 
-Natomiast szczegóły wyglądu tabeli, akcji, filtrowania oraz własnych komórek pozostają odpowiednio w:
+MC.Data.DataGrid does not require additional external dependencies.
 
-GridViewAttribute
-GridAction<T>
-GridFilter
-CustomColumn<TData, TView>
+---
 
-To rozdzielenie pozwala używać poszczególnych funkcjonalności niezależnie oraz łączyć je w jednym DataGridView.
+## License
 
-To jest wersja dokumentacji nastawiona na użytkownika biblioteki, ale jednocześnie zachowuje opis architektury CustomColumn, BitmapCache, AncherRenderHost i adapterów IEnumerable/IQueryable, ponieważ są one istotne do prawidłowego używania i projektowania rozszerzeń biblioteki.
+This project is licensed under the MIT License.
 
+See [`LICENSE.txt`](LICENSE.txt) for the complete license text.
 
+Copyright (c) 2026 gohunoff@gmail.com
 
+**Author:** Przemysław Załuska  
+**Email:** gohunoff@gmail.com
+
+**GitHub:**  [MC.Data.DataGrid on GitHub]https://github.com/GohunOff/DataGrid
+
+MC.Data.DataGrid is developed and maintained by the author.
+
+If you find a problem, have a feature request, or would like to contribute, please open an issue in the GitHub repository.
