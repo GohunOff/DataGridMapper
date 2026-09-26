@@ -1,4 +1,3 @@
 <Solution>
-  <Project Path="../../Copy_wor/DataGRidTest/DataGRidTest.csproj" Id="8375b951-e044-4f7a-a5a5-58fcfea20658" />
-  <Project Path="DataGridMapper/DataGridMapper.csproj" Id="46c554ae-0b52-4006-b8bd-6dfa72ca5d23" />
+  <Project Path="DataGridMapper.csproj" Id="46c554ae-0b52-4006-b8bd-6dfa72ca5d23" />
 </Solution>
