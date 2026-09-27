@@ -33,8 +33,7 @@ namespace MC.Data.DataGrid.CustomColumn
 
         public CustomColumn(
             ControlRenderHost renderHost,
-            MC.Data.DataGrid.BitmapCache.BitmapCache bitmapCache,
-            string propertyName)
+            MC.Data.DataGrid.BitmapCache.BitmapCache bitmapCache)
             : base(new CustomCell<TData, TView>())
         {
             if (renderHost == null)
@@ -42,11 +41,6 @@ namespace MC.Data.DataGrid.CustomColumn
 
             if (bitmapCache == null)
                 throw new ArgumentNullException("bitmapCache");
-
-            if (string.IsNullOrWhiteSpace(propertyName))
-                throw new ArgumentException(
-                    "propertyName nie może być pusty.",
-                    "propertyName");
 
             RenderHost = renderHost;
             Cache = bitmapCache;
@@ -58,39 +52,6 @@ namespace MC.Data.DataGrid.CustomColumn
             {
                 return value;
             };
-
-            PropertyInfo property =
-                typeof(TData).GetProperty(
-                    propertyName,
-                    BindingFlags.Public |
-                    BindingFlags.Instance);
-
-            if (property == null)
-            {
-                throw new ArgumentException(
-                    "Typ " +
-                    typeof(TData).Name +
-                    " nie posiada właściwości '" +
-                    propertyName +
-                    "'.",
-                    "propertyName");
-            }
-
-            GridViewAttribute attribute =
-                property
-                    .GetCustomAttributes(
-                        typeof(GridViewAttribute),
-                        true)
-                    .OfType<GridViewAttribute>()
-                    .FirstOrDefault();
-
-            PropertyMetadata =
-                new GridPropertyMetadata(
-                    property,
-                    attribute);
-
-            DataPropertyName =
-                PropertyMetadata.PropertyName;
         }
 
         public override object Clone()

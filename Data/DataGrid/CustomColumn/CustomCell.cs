@@ -18,6 +18,7 @@ namespace MC.Data.DataGrid.CustomColumn
             }
         }
 
+
         public override Type FormattedValueType
         {
             get { return typeof(TData); }

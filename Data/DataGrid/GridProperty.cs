@@ -935,8 +935,8 @@ namespace MC.Data.DataGrid
             return (DataGridViewColumn)constructor.Invoke(
                 new object[]
                 {
-            renderHost,
-            new MC.Data.DataGrid.BitmapCache.BitmapCache(20)
+                    renderHost,
+                    new MC.Data.DataGrid.BitmapCache.BitmapCache(20)
                 });
         }
     }

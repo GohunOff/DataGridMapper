@@ -16,6 +16,7 @@ namespace MC.Data.DataGrid
             AutoScroll = false;
         }
 
+
         private void AttachControl(Control control)
         {
             if (_currentControl == control)

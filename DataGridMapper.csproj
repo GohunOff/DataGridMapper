@@ -90,7 +90,6 @@
     <None Include="mcDataGrid.nuspec" />
     <None Include="README.md" />
     <Content Include="LICENSE.txt" />
-    <Content Include="TODO.txt" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
 </Project>
