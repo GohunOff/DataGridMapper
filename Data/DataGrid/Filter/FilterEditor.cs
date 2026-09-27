@@ -29,6 +29,11 @@ namespace MC.Data.DataGrid.Filter
             get { return EnumComboBox != null; }
         }
 
+        public bool IsCustom
+        {
+            get { return ValueTextBox != null && OperatorComboBox == null; }
+        }
+
         private FilterEditor()
         {
         }
@@ -54,6 +59,17 @@ namespace MC.Data.DataGrid.Filter
             {
                 PropertyName = propertyName,
                 BooleanComboBox = comboBox
+            };
+        }
+
+        public static FilterEditor CreateCustom(
+            string propertyName,
+            TextBox valueTextBox)
+        {
+            return new FilterEditor
+            {
+                PropertyName = propertyName,
+                ValueTextBox = valueTextBox
             };
         }
 

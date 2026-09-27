@@ -1,4 +1,5 @@
 ﻿using MC.Data.DataGrid.Filter;
+using MC.Data.DataGrid.I;
 using System;
 using System.Drawing;
 using System.Linq;
@@ -199,7 +200,18 @@ namespace MC.Data.DataGrid
                     continue;
                 }
 
-                int operatorWidth =
+                if (editor.IsCustom)
+                {
+                    editor.ValueTextBox.SetBounds(
+                    rectangle.X,
+                    3,
+                    width,
+                    height);
+
+                    continue;
+                }
+
+                    int operatorWidth =
                     Math.Min(
                         70,
                         Math.Max(
@@ -342,6 +354,20 @@ namespace MC.Data.DataGrid
                     FilterControlChanged;
 
                 return editor;
+            }
+
+            if (typeof(ICustomColumnData).IsAssignableFrom(type))
+            {
+                TextBox valueTextBoxCustom =
+                      new TextBox
+                      {
+                          BorderStyle =
+                              BorderStyle.FixedSingle,
+                          Enabled=false
+                      };
+                FilterEditor editorT = FilterEditor.CreateCustom(
+                    propertyName, valueTextBoxCustom);
+                return editorT;
             }
 
             // POZOSTAŁE TYPY
